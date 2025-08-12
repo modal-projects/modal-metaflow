@@ -208,10 +208,14 @@ class ModalDecorator(StepDecorator):
         def modal_wrapper(step_cli, env):
             """Simple subprocess wrapper that takes step_cli and env"""
             try:
-                # Add modal function environ to subprocess env
+                # Add envvars specified in @environment
                 if addl_env_vars is not None:
                     env.update(addl_env_vars)
+
+                # Add modal function environ to subprocess env
                 env.update(os.environ)
+
+                # Metaflow CLI step subcommand requirement
                 env["USERNAME"] = username
 
                 # Execute the Metaflow step command in subprocess

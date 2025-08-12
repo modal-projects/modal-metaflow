@@ -4,6 +4,7 @@ from metaflow import FlowSpec, step, modal
 
 # TODO: handle modal_metaflow deps internally
 image = modal_sdk.Image.debian_slim(python_version="3.11").uv_pip_install("semver")
+aws_secret = modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")
 
 
 # Example Metaflow + Modal integration
@@ -19,7 +20,7 @@ class ExampleFlow(FlowSpec):
         print(f"Flow beginning with status: {self.status}")
         self.next(self.process, self.process_again)
 
-    @modal(secrets=[modal_sdk.Secret.from_name("s3-temp")], image=image)
+    @modal(secrets=[aws_secret], image=image)
     @step
     def process(self):
         """
@@ -31,7 +32,7 @@ class ExampleFlow(FlowSpec):
         print(f"Flow in progress with status: {self.status}")
         self.next(self.join)
 
-    @modal(secrets=[modal_sdk.Secret.from_name("s3-temp")], image=image)
+    @modal(secrets=[aws_secret], image=image)
     @step
     def process_again(self):
         """
@@ -43,7 +44,7 @@ class ExampleFlow(FlowSpec):
         print(f"Flow in progress with status: {self.status}")
         self.next(self.join)
 
-    @modal(secrets=[modal_sdk.Secret.from_name("s3-temp")], image=image)
+    @modal(secrets=[aws_secret], image=image)
     @step
     def join(self, inputs):
         first = inputs.process.processed_data

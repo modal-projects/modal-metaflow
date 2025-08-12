@@ -20,7 +20,10 @@ class ExampleFlow(FlowSpec):
         self.next(self.process)
 
     # TODO: OIDC
-    @modal(secrets=[modal_sdk.Secret.from_name("s3-temp")], image=image)
+    @modal(
+        secrets=[modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")],
+        image=image,
+    )
     @step
     def process(self):
         """
