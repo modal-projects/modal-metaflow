@@ -184,8 +184,7 @@ class ModalDecorator(StepDecorator):
                         )(modal_wrapper)
 
                         # Store function name in _modal_func_name for CLI lookup
-                        if self == deco:
-                            self._modal_func_name = func_name
+                        deco._modal_func_name = func_name
 
             # Deploy single shared Modal app
             with modal_sdk.enable_output():
