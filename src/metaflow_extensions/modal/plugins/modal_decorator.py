@@ -16,7 +16,6 @@ from metaflow.util import get_username
 from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
 from metaflow.metadata_provider.util import sync_local_metadata_to_datastore
 import modal as modal_sdk
-import semver
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
@@ -113,10 +112,18 @@ class ModalDecorator(StepDecorator):
                             [f"{pkg}=={ver}" for pkg, ver in deco.packages.items()]
                         )
                     if hasattr(deco, "python") and deco.python is not None:
-                        python_version = semver.Version.parse(deco.python)
-                        self.python_version = (
-                            f"{python_version.major}.{python_version.minor}"
-                        )
+                        version_parts = deco.python.split(".")
+                        if len(version_parts) >= 2:
+                            try:
+                                major = int(version_parts[0])
+                                minor = int(version_parts[1])
+                                self.python_version = f"{major}.{minor}"
+                            except ValueError:
+                                # If parsing fails, use the original string as-is
+                                self.python_version = deco.python
+                        else:
+                            # If not in expected format, use as-is
+                            self.python_version = deco.python
 
                 elif deco.name == "conda":
                     # TODO

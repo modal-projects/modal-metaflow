@@ -2,7 +2,6 @@ import modal as modal_sdk
 from metaflow import FlowSpec, step, modal
 
 
-# TODO: handle modal_metaflow deps internally
 image = modal_sdk.Image.debian_slim(python_version="3.11").uv_pip_install("semver")
 aws_secret = modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")
 

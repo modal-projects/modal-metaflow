@@ -323,7 +323,7 @@ from modal import Image
 python_version=f"{sys.version_info.major}.{sys.version_info.minor}"
 axolotl_image = (
     modal.Image.debian_slim(python=python_version)
-        .uv_pip_install("metaflow==2.16.8", "axolotl==0.11.0", extra_options="--torch-backend=cu128")
+        .uv_pip_install("axolotl==0.11.0", extra_options="--torch-backend=cu128")
 )
 
 with axolotl_image.imports():
@@ -471,11 +471,12 @@ def k8s_step(self):
 
 # After: Modal
 # ECR-permissioned secret
+# TODO: use OIDC-provisioned secret for ECR auth
 aws_secret = modal.Secret.from_local_environ(["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"])
 custom_image = Image.from_aws_ecr(
     "000000000000.dkr.ecr.us-east-1.amazonaws.com/my-private-registry:latest",
     secret=aws_secret,
-)z
+)
 
 @modal(cpu=2, memory=4096, image=custom_image)
 @step
@@ -483,7 +484,7 @@ def modal_step_with_prebuilt(self):
     pass
 ```
 
-### From @batch Decorator
+<!--### From @batch Decorator
 
 ```python
 # Before: AWS Batch
@@ -497,7 +498,7 @@ def compute_step(self):
 @step
 def compute_step(self):
     pass
-```
+```-->
 
 ## Limitations and Constraints
 
