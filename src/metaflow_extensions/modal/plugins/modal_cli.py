@@ -306,46 +306,43 @@ def _execute_modal_task(
                 echo("Missing Modal app or function name")
             return 1
 
-        # TODO: figure out why this does not in fact enable modal stdio :/
-        with modal_sdk.enable_output():
-            # Use Modal SDK to lookup function directly
-            try:
-                func = modal_sdk.Function.from_name(modal_app_name, modal_func_name)
-            except Exception as e:
-                if echo:
-                    echo(f"Failed to lookup Modal app/function: {e}")
-                return 1
-
+        # Use Modal SDK to lookup function directly
+        try:
+            func = modal_sdk.Function.from_name(modal_app_name, modal_func_name)
+        except Exception as e:
             if echo:
-                echo(f"Spawning Modal function {modal_func_name}")
+                echo(f"Failed to lookup Modal app/function: {e}")
+            return 1
 
-            try:
-                call = func.spawn(step_cli, env)
-            except Exception as e:
-                if echo:
-                    echo(f"Failed to spawn Modal function: {e}")
-                return 1
+        try:
+            call = func.spawn(step_cli, env)
+        except Exception as e:
+            if echo:
+                echo(f"Failed to spawn Modal function: {e}")
+            return 1
 
-            # Wait for function completion using natural timeout
-            try:
-                result = call.get(timeout=run_time_limit)
-                if echo:
-                    echo(f"Modal function completed with exit code {result}")
-                return result
-            except TimeoutError:
-                if echo:
-                    echo("Modal function timed out")
-                call.cancel()
-                return 1
-            except KeyboardInterrupt:
-                if echo:
-                    echo("Modal function cancelled by user")
-                call.cancel()
-                return 1
-            except Exception as e:
-                if echo:
-                    echo(f"Modal function failed: {e}")
-                return 1
+        # Wait for function completion using natural timeout
+        try:
+            result, stdout_result, stderr_result = call.get(timeout=run_time_limit)
+            if echo:
+                echo(stdout_result, stream="stdout")
+                echo(stderr_result, stream="stderr")
+                echo(f"Modal function completed with exit code {result}")
+            return result
+        except TimeoutError:
+            if echo:
+                echo("Modal function timed out")
+            call.cancel()
+            return 1
+        except KeyboardInterrupt:
+            if echo:
+                echo("Modal function cancelled by user")
+            call.cancel()
+            return 1
+        except Exception as e:
+            if echo:
+                echo(f"Modal function failed: {e}")
+            return 1
 
     except Exception as e:
         if echo:

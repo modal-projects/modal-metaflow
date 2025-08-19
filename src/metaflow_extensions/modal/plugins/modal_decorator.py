@@ -236,11 +236,12 @@ class ModalDecorator(StepDecorator):
                     print(result.stderr, file=sys.stderr)
 
                 # Return exit code for proper Metaflow retry handling
-                return result.returncode
+                return result.returncode, result.stdout, result.stderr
 
             except Exception as e:
-                print(f"Modal function execution failed: {e}", file=sys.stderr)
-                return 1
+                err_str = f"Modal function execution failed: {e}"
+                print(err_str, file=sys.stderr)
+                return 1, "", err_str
 
         return modal_wrapper
 
