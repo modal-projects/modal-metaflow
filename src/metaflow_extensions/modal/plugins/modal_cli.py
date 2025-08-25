@@ -15,7 +15,19 @@ from metaflow import util
 from metaflow._vendor import click
 from metaflow.exception import METAFLOW_EXIT_DISALLOW_RETRY
 from metaflow.metadata_provider.util import sync_local_metadata_from_datastore
-from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
+from metaflow.metaflow_config import (
+    AWS_SECRETS_MANAGER_DEFAULT_REGION,
+    CARD_S3ROOT,
+    SERVICE_URL,
+    DATASTORE_LOCAL_DIR,
+    DATASTORE_SYSROOT_S3,
+    DATATOOLS_S3ROOT,
+    DEFAULT_AWS_CLIENT_PROVIDER,
+    DEFAULT_METADATA,
+    DEFAULT_SECRETS_BACKEND_TYPE,
+    OTEL_ENDPOINT,
+    S3_ENDPOINT_URL,
+)
 from metaflow.mflog import (
     BASH_SAVE_LOGS,
     bash_capture_logs,
@@ -154,13 +166,28 @@ def step(
                 key, value = env_var.split("=", 1)
                 env[key] = value
 
-    # Add datastore configuration to environment
-    env.update(
-        {
-            "METAFLOW_DATASTORE_SYSROOT_S3": ctx.obj.flow_datastore.datastore_root,
-            "METAFLOW_DEFAULT_DATASTORE": ctx.obj.flow_datastore.TYPE,
-        }
-    )
+    env_vars_to_add = {
+        "METAFLOW_SERVICE_URL": SERVICE_URL,
+        "METAFLOW_CODE_METADATA": code_package_metadata,
+        "METAFLOW_CODE_SHA": code_package_sha,
+        "METAFLOW_CODE_URL": code_package_url,
+        "METAFLOW_DATASTORE_SYSROOT_S3": DATASTORE_SYSROOT_S3,
+        "METAFLOW_DATATOOLS_S3ROOT": DATATOOLS_S3ROOT,
+        "METAFLOW_DEFAULT_DATASTORE": ctx.obj.flow_datastore.TYPE,
+        "METAFLOW_DEFAULT_METADATA": DEFAULT_METADATA,
+        "METAFLOW_RUNTIME_ENVIRONMENT": "modal",
+        "METAFLOW_DEFAULT_SECRETS_BACKEND_TYPE": DEFAULT_SECRETS_BACKEND_TYPE,
+        "METAFLOW_CARD_S3ROOT": CARD_S3ROOT,
+        "METAFLOW_DEFAULT_AWS_CLIENT_PROVIDER": DEFAULT_AWS_CLIENT_PROVIDER,
+        "METAFLOW_AWS_SECRETS_MANAGER_DEFAULT_REGION": AWS_SECRETS_MANAGER_DEFAULT_REGION,
+        "METAFLOW_S3_ENDPOINT_URL": S3_ENDPOINT_URL,
+        "METAFLOW_OTEL_ENDPOINT": OTEL_ENDPOINT,
+    }
+
+    # Filter out None values
+    env_vars_to_add = {k: v for k, v in env_vars_to_add.items() if v is not None}
+
+    env.update(env_vars_to_add)
 
     # Set up log locations for streaming
     ds = ctx.obj.flow_datastore.get_task_datastore(
