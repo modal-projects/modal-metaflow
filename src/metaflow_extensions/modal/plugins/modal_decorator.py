@@ -19,7 +19,10 @@ import modal as modal_sdk
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
-from metaflow.metaflow_config import FEAT_ALWAYS_UPLOAD_CODE_PACKAGE
+from metaflow.metaflow_config import (
+    DEFAULT_RUNTIME_LIMIT,
+    FEAT_ALWAYS_UPLOAD_CODE_PACKAGE,
+)
 
 
 class ModalDecoratorException(MetaflowException):
@@ -43,12 +46,14 @@ class ModalDecorator(StepDecorator):
         "volumes": dict(),
         "secrets": list(),
         "name": None,
+        "mark_reentrant": False,
     }
     # shared state across ModalDecorator instances
     _modal_app: Optional[modal_sdk.App] = None
     _modal_app_id: Optional[str] = None
     _modal_func_name: Optional[str] = None
     _modal_app_deployed = False
+    _has_logged_reentrant_warning = False
     package_metadata = None
     package_url = None
     package_sha = None
@@ -57,12 +62,76 @@ class ModalDecorator(StepDecorator):
         self.env_vars = None
         self.requirements = []
         self.python_version = None
+        self.mark_reentrant = self.attributes.pop("mark_reentrant")
 
         # shared state across ModalDecorator instances
         if self.__class__._modal_app is None:
             timestamp = str(int(time.time()))[-6:]  # unique app name
             app_name = f"metaflow-exec-{timestamp}"
             self.__class__._modal_app = modal_sdk.App(app_name)
+
+    def _parse_timeout(self, decorators, logger):
+        """Parse and validate timeout configuration from decorators."""
+
+        # Check if both @modal(..., timeout=N) and @timeout are specified
+        timeout_decorator_present = any(
+            hasattr(deco, "name") and deco.name == "timeout" for deco in decorators
+        )
+        modal_timeout_specified = self.attributes["timeout"] is not None
+
+        if modal_timeout_specified and timeout_decorator_present:
+            raise ModalDecoratorException(
+                "Cannot specify both @modal(timeout=...) and @timeout decorator. "
+                "Please use only one timeout configuration method."
+            )
+
+        # Fallback to globally configured timeout
+        default_timeout = DEFAULT_RUNTIME_LIMIT
+
+        # Determine timeout_val based on priority
+        if modal_timeout_specified:
+            timeout_val = self.attributes["timeout"]
+        elif timeout_decorator_present:
+            # Find the timeout decorator and get its value
+            for deco in decorators:
+                if hasattr(deco, "name") and deco.name == "timeout":
+                    timeout_val = deco.secs
+                    break
+            raise ModalDecoratorException(
+                "Internal error: timeout decorator was detected but not found"
+            )
+        else:
+            timeout_val = default_timeout
+
+        timeout_val = int(timeout_val)  # type: ignore
+
+        if timeout_val > 24 * 60 * 60:  # 1 day
+            if not self.mark_reentrant:
+                if not modal_timeout_specified and not timeout_decorator_present:
+                    # Value derived from DEFAULT_RUNTIME_LIMIT - truncate and warn
+                    timeout_val = 24 * 60 * 60
+                    if not self.__class__._has_logged_reentrant_warning:
+                        logger(
+                            "Modal steps are limited to 24 hours by default. "
+                            "Timeout has been truncated to 24 hours. "
+                            "To run longer steps, specify mark_reentrant=True in @modal decorator.",
+                            system_msg=True,
+                            bad=True,
+                        )
+                        self.__class__._has_logged_reentrant_warning = True
+                else:
+                    # Value from @modal or @timeout - raise error
+                    raise ModalDecoratorException(
+                        "Modal steps with timeout > 24 hours must be reentrant. "
+                        "Please specify mark_reentrant=True in @modal decorator "
+                        "to run with a timeout greater than 24 hours."
+                    )
+            else:
+                # mark_reentrant=True - allow any timeout
+                # TODO: Add Modal Retries support for reentrant functions
+                pass
+
+        return timeout_val
 
     def step_init(
         self, flow, graph, step_name, decorators, environment, flow_datastore, logger
@@ -73,6 +142,10 @@ class ModalDecorator(StepDecorator):
             )
         self.environment = environment
         self.flow_datastore = flow_datastore
+
+        # Parse and validate timeout configuration
+        timeout_val = self._parse_timeout(decorators, logger)
+        self.attributes["timeout"] = timeout_val
 
         for deco in decorators:
             if hasattr(deco, "name"):
@@ -95,16 +168,6 @@ class ModalDecorator(StepDecorator):
                 elif deco.name == "secrets":
                     # TODO
                     pass
-
-                elif deco.name == "timeout":
-                    timeout = 0
-                    if hasattr(deco, "seconds"):
-                        timeout += deco.seconds
-                    if hasattr(deco, "minutes"):
-                        timeout += 60 * deco.minutes
-                    if hasattr(deco, "hours"):
-                        timeout += 60 * 60 * deco.hours
-                    self.attributes["timeout"] = timeout
 
                 elif deco.name == "pypi":
                     if hasattr(deco, "packages") and len(deco.packages) > 0:
@@ -155,8 +218,9 @@ class ModalDecorator(StepDecorator):
                         hasattr(deco, "shared_memory")
                         and deco.shared_memory is not None
                     ):
-                        logger.warn(
-                            "Modal backend does not use shared_memory, ignoring."
+                        logger(
+                            "Modal backend does not use shared_memory, ignoring.",
+                            system_msg=True,
                         )
 
     def runtime_init(self, flow, graph, package, run_id):
