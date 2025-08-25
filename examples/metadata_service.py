@@ -106,6 +106,11 @@ class MetaflowMetadataService:
             ["python", "-m", "services.metadata_service.server"], env=env
         )
         print("Service process launched.")
+        db_init = subprocess.run(["python", "run_goose.py"], check=True)
+        if db_init.returncode != 0:
+            print("Metadata DB initialization failed!")
+        else:
+            print("Metadata DB initialized.")
 
     @modal.web_server(8080, startup_timeout=10 * 60)
     def serve_metadata(self):
