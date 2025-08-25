@@ -23,6 +23,8 @@ metadata(
 
 req_path = pathlib.Path(__file__).parent / "requirements.txt"
 hf_image = (
+    # NOTE: this image does _not_ work on H100s. the bitsandbytes version shipped
+    # here does not have cublas kernels for Hopper
     modal_sdk.Image.from_registry(
         "valayob/hf-transformer-gpu:4.39.3.1", add_python="3.11"
     )
