@@ -1,10 +1,10 @@
 training:
-  num_epochs: 2
-  macro_batch_size: 1
+  num_epochs: 1
+  macro_batch_size: 256
   visible_devices: null
   cutoff_len: 258
-  micro_batch_size: 1
-  learning_rate: 0.0003
+  micro_batch_size: 64
+  learning_rate: 0.0024
   master_port: 1234
   fp16: false
   eval_steps: 100
