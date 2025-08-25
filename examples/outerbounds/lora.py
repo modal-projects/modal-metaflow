@@ -1,4 +1,5 @@
 import pathlib
+
 import modal as modal_sdk
 from gpu_profile import gpu_profile
 from metaflow import (
@@ -7,13 +8,12 @@ from metaflow import (
     checkpoint,
     current,
     huggingface_hub,
+    metadata,
     modal,
     model,
     project,
-    pypi,
     retry,
     step,
-    metadata,
 )
 from mixins import N_GPU, HuggingFaceLora
 
@@ -60,7 +60,7 @@ class LlamaInstructionTuning(FlowSpec, HuggingFaceLora):
     @model(load=["hf_model_checkpoint"])
     @checkpoint
     @modal(
-        image=hf_image, gpu=f"H100!:{N_GPU}", cpu=14, memory=72000, secrets=[aws_secret]
+        image=hf_image, gpu=f"A100:{N_GPU}", cpu=14, memory=72000, secrets=[aws_secret]
     )
     @retry(times=3)
     @step

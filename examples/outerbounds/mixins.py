@@ -1,8 +1,9 @@
-from metaflow import Parameter, IncludeFile, JSONType
-from config import load_config, TrainConfig
-from subprocess import check_output
 import re
 import tempfile
+from subprocess import check_output
+
+from config import TrainConfig, load_config
+from metaflow import IncludeFile, JSONType, Parameter
 
 N_GPU = 4
 visible_devices = str(list(range(N_GPU)))[1:-1]
@@ -109,7 +110,7 @@ class ConfigBase:
         from omegaconf import OmegaConf
 
         return [
-            Markdown(f"## Experiment Config"),
+            Markdown("## Experiment Config"),
             Markdown(f"```\n{OmegaConf.to_yaml(self.config)}```"),
         ]
 
@@ -122,6 +123,7 @@ class HuggingFaceLora(ConfigBase):
         env=None,
     ):
         import subprocess
+
         from omegaconf import OmegaConf
 
         # TODO set `--nproc_per_node` based on `visible_devices` setting.

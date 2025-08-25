@@ -2,7 +2,7 @@ import os
 import re
 from datetime import datetime
 from functools import wraps
-from subprocess import Popen, check_call, check_output
+from subprocess import Popen, check_output
 from tempfile import TemporaryFile
 
 # Card plot styles
@@ -249,7 +249,7 @@ def make_card(results, artifact_name):
     els = []
 
     def _error():
-        els.append(Markdown(f"## GPU profiler failed:\n```results['error']```"))
+        els.append(Markdown("## GPU profiler failed:\n```results['error']```"))
 
     def _drivers():
         els.append(Markdown("## Drivers"))
@@ -299,7 +299,7 @@ def make_card(results, artifact_name):
         _utilization()
 
         try:
-            import matplotlib
+            pass
         except:
             els.append(Markdown("Install `matplotlib` to enable plots"))
         else:
