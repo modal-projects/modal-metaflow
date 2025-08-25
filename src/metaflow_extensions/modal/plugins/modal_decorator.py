@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+import traceback
 from typing import Optional
 
 from metaflow.util import get_username
@@ -290,20 +291,23 @@ class ModalDecorator(StepDecorator):
 
                 # Execute the Metaflow step command in subprocess
                 result = subprocess.run(
-                    step_cli, shell=True, env=env, capture_output=True, text=True
+                    step_cli,
+                    shell=True,
+                    env=env,
+                    capture_output=True,
                 )
 
                 # Print stdout/stderr for debugging
                 if result.stdout:
-                    print(result.stdout)
+                    print("STDOUT\n", result.stdout.decode())
                 if result.stderr:
-                    print(result.stderr, file=sys.stderr)
+                    print("STDERR\n", result.stderr.decode(), file=sys.stderr)
 
                 # Return exit code for proper Metaflow retry handling
                 return result.returncode, result.stdout, result.stderr
 
-            except Exception as e:
-                err_str = f"Modal function execution failed: {e}"
+            except Exception:
+                err_str = f"Modal function execution failed:\n{traceback.format_exc()}"
                 print(err_str, file=sys.stderr)
                 return 1, "", err_str
 
