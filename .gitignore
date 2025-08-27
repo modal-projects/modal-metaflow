@@ -1,3 +1,5 @@
+
+.direnv/
 .metaflow/
 metaflow_src/
 
