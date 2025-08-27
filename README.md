@@ -32,7 +32,6 @@ Currently, we require some S3-permissioned auth in a Modal Secret. This has only
 $ aws sso login
 # --> login in browser
 $ aws configure export-credentials --format env-no-export > /tmp/aws_sso.env
-$ echo "AWS_DEFAULT_REGION=us-east-1" >> /tmp/aws_sso.env
 ```
 
 Then in our Flow, we pass this secret to the `@modal` decorator:

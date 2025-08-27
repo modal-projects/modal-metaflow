@@ -152,8 +152,9 @@ class ModalDecorator(StepDecorator):
             if hasattr(deco, "name"):
                 # Unrecoverable
                 if deco.name == "kubernetes":
-                    raise ModalDecoratorException(
-                        "@kubernetes and @modal are mutually exclusive."
+                    logger(
+                        "@kubernetes and @modal are mutually exclusive. Ignoring @kubernetes decorator.",
+                        system_msg=True,
                     )
 
                 if deco.name == "batch":
