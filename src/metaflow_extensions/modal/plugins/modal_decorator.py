@@ -152,10 +152,50 @@ class ModalDecorator(StepDecorator):
             if hasattr(deco, "name"):
                 # Unrecoverable
                 if deco.name == "kubernetes":
-                    logger(
-                        "@kubernetes and @modal are mutually exclusive. Ignoring @kubernetes decorator.",
-                        system_msg=True,
-                    )
+                    # If the user explicitly authored @kubernetes on this step, keep prior behavior.
+                    is_user_k8s = getattr(deco, "statically_defined", False)
+                    if is_user_k8s:
+                        raise ModalDecoratorException(
+                            "@kubernetes and @modal are mutually exclusive on a user-authored decorator. Please remove one of them from your step."
+                        )
+                    else:
+                        # Argo injected @kubernetes. Minimize pod resources and inject required secrets
+                        k8s_attrs = deco.attributes
+                        # Minimize resources for the launcher pod
+                        k8s_attrs["cpu"] = str(0.1)
+                        k8s_attrs["memory"] = str(128)
+                        k8s_attrs["disk"] = str(256)
+                        k8s_attrs["gpu"] = 0
+                        k8s_attrs["qos"] = "Burstable"
+                        k8s_attrs["use_tmpfs"] = False
+                        k8s_attrs["tmpfs_size"] = None
+                        k8s_attrs["shared_memory"] = None
+
+                        # Per-step Modal secret injection.
+                        # Name can be customized via env; defaults chosen for local testing.
+                        modal_secret_name = os.environ.get(
+                            "METAFLOW_MODAL_ARGO_K8S_SECRET_MODAL", "modal-argo-creds"
+                        )
+                        secrets_to_add = (
+                            [modal_secret_name]
+                            if modal_secret_name and isinstance(modal_secret_name, str)
+                            else []
+                        )
+                        if secrets_to_add:
+                            existing = k8s_attrs.get("secrets")
+                            if not existing:
+                                k8s_attrs["secrets"] = secrets_to_add
+                            elif isinstance(existing, str):
+                                k8s_attrs["secrets"] = [existing] + secrets_to_add
+                            elif isinstance(existing, list):
+                                # Avoid duplicates
+                                existing_set = set(existing)
+                                k8s_attrs["secrets"] = list(
+                                    existing_set.union(secrets_to_add)
+                                )
+                            else:
+                                # Fallback: overwrite with our list
+                                k8s_attrs["secrets"] = secrets_to_add
 
                 if deco.name == "batch":
                     raise ModalDecoratorException(

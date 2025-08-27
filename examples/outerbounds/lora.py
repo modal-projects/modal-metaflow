@@ -18,7 +18,7 @@ from metaflow import (
 from mixins import N_GPU, HuggingFaceLora
 
 metadata(
-    "https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
+    "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
 )
 
 req_path = pathlib.Path(__file__).parent / "requirements.txt"

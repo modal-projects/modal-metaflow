@@ -1,8 +1,8 @@
 import modal as modal_sdk
-from metaflow import FlowSpec, step, modal, metadata
+from metaflow import FlowSpec, step, modal, metadata, pypi_base
 
 metadata(
-    "https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
+    "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
 )
 
 
@@ -11,6 +11,7 @@ aws_secret = modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")
 
 
 # Example Metaflow + Modal integration
+# @pypi_base(packages={"modal": "1.1.3"})
 class ExampleFlow(FlowSpec):
     """
     Example flow demonstrating Modal integration.
