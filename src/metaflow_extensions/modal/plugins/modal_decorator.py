@@ -150,14 +150,14 @@ class ModalDecorator(StepDecorator):
 
         for deco in decorators:
             if hasattr(deco, "name"):
-                # Unrecoverable
                 if deco.name == "kubernetes":
                     # If the user explicitly authored @kubernetes on this step, keep prior behavior.
                     is_user_k8s = getattr(deco, "statically_defined", False)
                     if is_user_k8s:
-                        raise ModalDecoratorException(
-                            "@kubernetes and @modal are mutually exclusive on a user-authored decorator. Please remove one of them from your step."
-                        )
+                        pass
+                        # raise ModalDecoratorException(
+                        #     "@kubernetes and @modal are mutually exclusive on a user-authored decorator. Please remove one of them from your step."
+                        # )
                     else:
                         # Argo injected @kubernetes. Minimize pod resources and inject required secrets
                         k8s_attrs = deco.attributes
@@ -170,6 +170,7 @@ class ModalDecorator(StepDecorator):
                         k8s_attrs["use_tmpfs"] = False
                         k8s_attrs["tmpfs_size"] = None
                         k8s_attrs["shared_memory"] = None
+                        k8s_attrs["image"] = "ghcr.io/thomasjpfan/modal-client:0.0.3"
 
                         # Per-step Modal secret injection.
                         # Name can be customized via env; defaults chosen for local testing.
@@ -265,20 +266,14 @@ class ModalDecorator(StepDecorator):
                             system_msg=True,
                         )
 
-    def runtime_init(self, flow, graph, package, run_id):
-        """Deploy Modal app with all @modal step functions"""
-        self.flow_name = flow.__class__.__name__
-        self.graph = graph
-        self.package = package
-        self.run_id = run_id
-
         if not self.__class__._modal_app_deployed:
             # Iterate through all @modal decorated steps
+            flow_name = flow.name
             for step in flow:
                 for deco in step.decorators:
                     if isinstance(deco, ModalDecorator):
                         # Create unique function names: f"{flow_name}__{step_name}"
-                        func_name = f"{self.flow_name}__{step.name}"
+                        func_name = f"{flow_name}__{step.name}"
 
                         # Filter out None values and name from attributes for Modal function
                         modal_attributes = {
@@ -293,7 +288,9 @@ class ModalDecorator(StepDecorator):
 
                         # Create and register Modal function with serialized=True
                         _ = self.__class__._modal_app.function(
-                            serialized=True, name=func_name, **modal_attributes
+                            serialized=True,
+                            name=func_name,
+                            **modal_attributes,
                         )(modal_wrapper)
 
                         # Store function name in _modal_func_name for CLI lookup
@@ -301,10 +298,14 @@ class ModalDecorator(StepDecorator):
 
             # Deploy single shared Modal app
             with modal_sdk.enable_output():
-                self.__class__._modal_app.deploy()
+                self.__class__._modal_app.deploy(environment_name="jason-dev")
                 assert self.__class__._modal_app.app_id is not None
                 self.__class__._modal_app_id = self.__class__._modal_app.app_id
                 self.__class__._modal_app_deployed = True
+
+    def runtime_init(self, flow, graph, package, run_id):
+        """No-op for compatibility with @kubernetes."""
+        pass
 
     def _create_modal_func(self, step):
         """Create Modal function that wraps subprocess execution"""
@@ -383,36 +384,25 @@ class ModalDecorator(StepDecorator):
     def runtime_step_cli(
         self, cli_args, retry_count, max_user_code_retries, ubf_context
     ):
-        """Redirect to 'metaflow modal step' with app/func identifiers"""
-        if retry_count <= max_user_code_retries:
-            # Change cli_args.commands to ["modal", "step"]
-            cli_args.commands = ["modal", "step"]
-            cli_args.command_args.append(self.package_metadata)
-            cli_args.command_args.append(self.package_sha)
-            cli_args.command_args.append(self.package_url)
-
-            # Add modal_app_name and modal_func_name to command_options
-            cli_args.command_options.update(
-                {
-                    "modal_app_name": self.__class__._modal_app.name,
-                    "modal_func_name": self._modal_func_name,
-                }
-            )
-            # Ensure python executable is preserved
-            cli_args.entrypoint[0] = sys.executable
+        """No-op for compatibility with @kubernetes"""
+        return
 
     def runtime_finished(self, exception):
-        # Clean up deployed app
-        if self.__class__._modal_app_id:
+        if not self.__class__._modal_app_deployed:
+            return
+
+        # Best-effort stop of per-task Modal app
+        app_id = getattr(self, "_pod_modal_app_id", None)
+        if app_id:
             try:
-                subprocess.run(
-                    ["modal", "app", "stop", self.__class__._modal_app_id],
-                    capture_output=True,
-                    text=True,
+                result = subprocess.run(
+                    ["modal", "app", "stop", app_id], capture_output=True, text=True
                 )
+                if result.returncode == 0:
+                    self.__class__._modal_app_deployed = False
             except Exception:
-                # Ignore errors when stopping the app
                 pass
+        return
 
     def task_pre_step(
         self,
@@ -428,8 +418,17 @@ class ModalDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
+        # Persist references for use in decorate/finish
         self.metadata = metadata
         self.task_datastore = task_datastore
+        self._current_step_name = step_name
+        self._run_id = run_id
+        self._task_id = task_id
+        self._modal_timeout = int(
+            self.attributes.get("timeout") or DEFAULT_RUNTIME_LIMIT
+        )
+
+        # Write metadata for observability
         meta_entries = [
             MetaDatum(
                 field="modal_execution",
@@ -446,10 +445,110 @@ class ModalDecorator(StepDecorator):
         ]
         metadata.register_metadata(run_id, step_name, task_id, meta_entries)
 
+        # Capture code package identifiers from env (Argo pods) or fall back to saved ones
+        self.__class__.package_metadata = os.environ.get(
+            "METAFLOW_CODE_METADATA", self.__class__.package_metadata
+        )
+        self.__class__.package_sha = os.environ.get(
+            "METAFLOW_CODE_SHA", self.__class__.package_sha
+        )
+        self.__class__.package_url = os.environ.get(
+            "METAFLOW_CODE_URL", self.__class__.package_url
+        )
+
+        # Compute input_paths string for joins/foreach
+        input_paths_list: list[str] = []
+        try:
+            if inputs:
+                for inp in inputs:
+                    ps = getattr(inp, "pathspec", None)
+                    if ps is None and hasattr(inp, "task"):
+                        ps = getattr(inp.task, "pathspec", None)
+                    if ps:
+                        input_paths_list.append(str(ps))
+        except Exception:
+            # Best-effort; leave empty if unavailable
+            input_paths_list = []
+        self._input_paths = ",".join(input_paths_list) if input_paths_list else None
+
     def task_decorate(
         self, step_func, flow, graph, retry_count, max_user_code_retries, ubf_context
     ):
-        return step_func
+        """Replace step body with a wrapper that invokes 'metaflow modal step'."""
+        step_name = getattr(self, "_current_step_name", None)
+        run_id = getattr(self, "_run_id", None)
+        task_id = getattr(self, "_task_id", None)
+        input_paths = getattr(self, "_input_paths", None)
+        modal_app_name = getattr(self, "_pod_modal_app_name", None)
+        modal_func_name = getattr(self, "_modal_func_name", None)
+        run_time_limit = getattr(self, "_modal_timeout", None)
+
+        if modal_app_name is None:
+            raise ModalDecoratorException(
+                "Unrecoverable: Unknown Modal app name for Flow"
+            )
+
+        if modal_func_name is None:
+            raise ModalDecoratorException(
+                "Unrecoverable: Unknown Modal function name for Flow"
+            )
+
+        # Environment variables captured from @environment decorator
+        env_args: list[str] = []
+        if self.env_vars:
+            for k, v in self.env_vars.items():
+                env_args.extend(["--environment", f"{k}={v}"])
+
+        def wrapper(*args, **kwargs):
+            # Build CLI args for 'python <flowfile> modal step ...'
+            flow_entry = sys.argv[0]
+            cmd: list[str] = [
+                sys.executable,
+                flow_entry,
+                "modal",
+                "step",
+                str(step_name),
+                str(self.__class__.package_metadata or ""),
+                str(self.__class__.package_sha or ""),
+                str(self.__class__.package_url or ""),
+                "--run-id",
+                str(run_id),
+                "--task-id",
+                str(task_id),
+            ]
+            if input_paths:
+                cmd.extend(["--input-paths", input_paths])
+            cmd.extend(
+                [
+                    "--retry-count",
+                    str(retry_count or 0),
+                    "--max-user-code-retries",
+                    str(max_user_code_retries or 0),
+                    "--modal-app-name",
+                    str(modal_app_name),
+                    "--modal-func-name",
+                    str(modal_func_name),
+                    "--run-time-limit",
+                    str(run_time_limit or DEFAULT_RUNTIME_LIMIT),
+                ]
+            )
+            # Append any environment passthroughs
+            cmd.extend(env_args)
+
+            # Prepare environment for subprocess
+            env = os.environ.copy()
+            # Ensure METAFLOW_FLOW_FILENAME is present
+            env.setdefault("METAFLOW_FLOW_FILENAME", os.path.basename(sys.argv[0]))
+
+            result = subprocess.run(cmd)
+            if result.returncode != 0:
+                raise ModalDecoratorException(
+                    f"Modal step failed with exit code {result.returncode}"
+                )
+            # Modal executed the step remotely; skip local user code
+            return None
+
+        return wrapper
 
     def task_post_step(
         self, step_name, flow, graph, retry_count, max_user_code_retries

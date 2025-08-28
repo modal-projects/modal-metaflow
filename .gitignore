@@ -2,6 +2,7 @@
 .direnv/
 .metaflow/
 metaflow_src/
+.modal-token
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

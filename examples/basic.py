@@ -1,5 +1,7 @@
+import time
 import modal as modal_sdk
-from metaflow import FlowSpec, step, modal, metadata, pypi_base
+
+from metaflow import FlowSpec, step, modal, metadata, kubernetes
 
 metadata(
     "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
@@ -7,16 +9,18 @@ metadata(
 
 
 image = modal_sdk.Image.debian_slim(python_version="3.11")
-aws_secret = modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")
+aws_secret = modal_sdk.Secret.from_local_environ(
+    env_keys=["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "AWS_SESSION_TOKEN"]
+)
 
 
 # Example Metaflow + Modal integration
-# @pypi_base(packages={"modal": "1.1.3"})
 class ExampleFlow(FlowSpec):
     """
     Example flow demonstrating Modal integration.
     """
 
+    @kubernetes(image="ghcr.io/thomasjpfan/modal-client:0.0.3")
     @step
     def start(self):
         self.data = list(range(1, 6))

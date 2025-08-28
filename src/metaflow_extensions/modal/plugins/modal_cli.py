@@ -153,7 +153,11 @@ def step(
         time.sleep(minutes_between_retries * 60)
 
     # Set up environment variables
-    env = {"METAFLOW_FLOW_FILENAME": os.path.basename(sys.argv[0])}
+    env = {
+        "METAFLOW_FLOW_FILENAME": os.environ.get(
+            "METAFLOW_FLOW_FILENAME", os.path.basename(sys.argv[0])
+        )
+    }
 
     # Add split variables for input paths
     if split_vars:
@@ -328,6 +332,8 @@ def _execute_modal_task(
     try:
         import modal as modal_sdk
 
+        print(modal_app_name, modal_func_name)
+
         if not modal_app_name or not modal_func_name:
             if echo:
                 echo("Missing Modal app or function name")
@@ -335,7 +341,9 @@ def _execute_modal_task(
 
         # Use Modal SDK to lookup function directly
         try:
-            func = modal_sdk.Function.from_name(modal_app_name, modal_func_name)
+            func = modal_sdk.Function.from_name(
+                modal_app_name, modal_func_name, environment_name="jason-dev"
+            )
         except Exception as e:
             if echo:
                 echo(f"Failed to lookup Modal app/function: {e}")

@@ -1,7 +1,7 @@
 [project]
-name = "modal-metaflow"
+name = "modal_metaflow"
 version = "0.1.0"
-description = "A Metaflow plugin for running Flows on Modal"
+description = "A Metaflow plugin for running Flow steps on Modal"
 readme = "README.md"
 authors = [
     { name = "Jason Mancuso", email = "7891333+jvmncs@users.noreply.github.com" },
@@ -10,11 +10,15 @@ requires-python = ">=3.11"
 dependencies = ["modal", "metaflow"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/metaflow_extensions"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["metaflow_extensions*"]
+
+[tool.setuptools.package-data]
+metaflow_extensions = ["py.typed"]
 
 [tool.pyright]
 venvPath = "."

@@ -45,7 +45,7 @@ pg_vol = modal.Volume.from_name("metaflow-metadata-db", create_if_missing=True)
     image=pg_image,
     volumes={"/var/lib/postgresql/data2": pg_vol},
     min_containers=1,
-    timeout=10 * 60,
+    timeout=60 * 60,
 )
 class MetaflowMetadataDb:
     @modal.enter()
@@ -73,7 +73,7 @@ class MetaflowMetadataDb:
         self.db_process.terminate()
 
 
-@app.cls(image=metadata_image, min_containers=1, timeout=10 * 60)
+@app.cls(image=metadata_image, min_containers=1, timeout=60 * 60)
 class MetaflowMetadataService:
     @modal.enter()
     def setup(self):

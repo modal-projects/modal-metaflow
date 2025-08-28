@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta
 
 from metaflow import Deployer
 
@@ -7,24 +8,27 @@ deployed_flow = (
         "examples/basic.py",
         datastore="s3",
         datastore_root="s3://metaflow-modal",
-        environment="pypi",
         env={
             "METAFLOW_KUBERNETES_NAMESPACE": "argo",
-            "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials",
-            # "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-modal",
+            "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
+            "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-modal",
+            "MODAL_ENVIRONMENT": "jason-dev",
         },
     )
     .argo_workflows()
     .create()
 )
-print("Production token", deployed_flow.production_token)
+print(f"Production token: {deployed_flow.production_token}")
 triggered_run = deployed_flow.trigger()
 
-print("Run started", triggered_run.run)
+print("Run started.")
+print(f"Run: {triggered_run.run}")
 
 time.sleep(10)
-if triggered_run.run is None:
+limit = datetime.now() + timedelta(seconds=30)
+while triggered_run.run is None:
     print("Run not found yet, waiting...")
-    time.sleep(50)
-
-print("Terminating the flow after 1m", triggered_run.terminate())
+    time.sleep(5)
+    if datetime.now() > limit:
+        print("Timed out looking for run after 1.5 min.")
+        break
