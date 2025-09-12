@@ -4,8 +4,10 @@ The `metaflow modal step` subcommand is used to launch individual step method ex
 It's meant to be invoked by `ModalDecorator.runtime_step_cli`.
 """
 
+import json
 import os
 import shlex
+import subprocess
 import sys
 import time
 import traceback
@@ -83,7 +85,7 @@ def modal():
 )
 @click.option("--modal-app-name", help="Modal app name for function lookup.")
 @click.option("--modal-func-name", help="Modal function name for execution.")
-# TODO: maybe get rid of these
+@click.option("--modal-attrs-json", help="Serialized Modal attributes as JSON.")
 @click.option("--environment", multiple=True, help="Environment variables for Modal.")
 @click.pass_context
 def step(
@@ -96,10 +98,30 @@ def step(
     run_time_limit=None,
     modal_app_name=None,
     modal_func_name=None,
+    modal_attrs_json=None,
     environment=None,
     **kwargs,
 ):
     """Execute a single task using Modal infrastructure."""
+    
+    # Sanity check - something's gone wrong if we're running inside a Modal worker
+    if os.getenv("METAFLOW_MODAL_WORKER") == "1":
+        ctx.fail("This command must not be run inside a Modal worker.")
+    
+    # Validate required arguments
+    if not modal_app_name or not modal_func_name:
+        ctx.fail("Missing Modal app or function name")
+    
+    if not code_package_url or not code_package_sha:
+        ctx.fail("Missing code package URL or SHA - ensure Modal app was deployed properly")
+    
+    # Parse serialized attributes if provided (for future use)
+    if modal_attrs_json:
+        try:
+            modal_attrs = json.loads(modal_attrs_json)  # noqa: F841
+            # TODO: Use modal_attrs for enhanced CLI functionality if needed
+        except json.JSONDecodeError:
+            ctx.fail(f"Invalid JSON in modal-attrs-json: {modal_attrs_json}")
 
     def echo(msg, stream="stderr", modal_id=None, **kwargs):
         msg = util.to_unicode(msg)
@@ -180,6 +202,7 @@ def step(
         "METAFLOW_DEFAULT_DATASTORE": ctx.obj.flow_datastore.TYPE,
         "METAFLOW_DEFAULT_METADATA": DEFAULT_METADATA,
         "METAFLOW_RUNTIME_ENVIRONMENT": "modal",
+        "METAFLOW_MODAL_WORKER": "1",  # Flag to indicate we're inside Modal worker
         "METAFLOW_DEFAULT_SECRETS_BACKEND_TYPE": DEFAULT_SECRETS_BACKEND_TYPE,
         "METAFLOW_CARD_S3ROOT": CARD_S3ROOT,
         "METAFLOW_DEFAULT_AWS_CLIENT_PROVIDER": DEFAULT_AWS_CLIENT_PROVIDER,
@@ -187,6 +210,17 @@ def step(
         "METAFLOW_S3_ENDPOINT_URL": S3_ENDPOINT_URL,
         "METAFLOW_OTEL_ENDPOINT": OTEL_ENDPOINT,
     }
+
+    # Ensure USERNAME is present for worker environment
+    username = os.environ.get("USERNAME")
+    if not username:
+        try:
+            # util may not always expose get_username, so guard it
+            username = getattr(util, "get_username", lambda: None)()  # type: ignore
+        except Exception:
+            username = None
+    if username:
+        env_vars_to_add["USERNAME"] = str(username)
 
     # Filter out None values
     env_vars_to_add = {k: v for k, v in env_vars_to_add.items() if v is not None}
@@ -206,13 +240,17 @@ def step(
     # stderr_location = ds.get_log_location(TASK_LOG_SOURCE, "stderr")
 
     def _sync_metadata():
-        if ctx.obj.metadata.TYPE == "local":
-            sync_local_metadata_from_datastore(
-                DATASTORE_LOCAL_DIR,
-                ctx.obj.flow_datastore.get_task_datastore(
-                    kwargs["run_id"], step_name, kwargs["task_id"]
-                ),
-            )
+        try:
+            if ctx.obj.metadata.TYPE == "local":
+                sync_local_metadata_from_datastore(
+                    DATASTORE_LOCAL_DIR,
+                    ctx.obj.flow_datastore.get_task_datastore(
+                        kwargs["run_id"], step_name, kwargs["task_id"], attempt=int(retry_count)
+                    ),
+                )
+        except Exception as e:
+            # Log the error but don't fail the entire task if metadata sync fails
+            echo(f"Warning: Failed to sync metadata: {e}", stream="stderr")
 
     step_cli = _build_command(
         ctx,
@@ -332,21 +370,41 @@ def _execute_modal_task(
     try:
         import modal as modal_sdk
 
-        print(modal_app_name, modal_func_name)
+        # Arguments are already validated in the step function
 
-        if not modal_app_name or not modal_func_name:
-            if echo:
-                echo("Missing Modal app or function name")
-            return 1
+        # Environment preference: decorator-resolved (via wrapper) > pod envs > CLI inference
+        env_name = os.getenv("METAFLOW_MODAL_ENVIRONMENT") or os.getenv("MODAL_ENVIRONMENT")
+        if not env_name:
+            try:
+                probe = subprocess.run(
+                    ["modal", "environment", "list", "--json"],
+                    capture_output=True,
+                    text=True,
+                )
+                if probe.returncode == 0 and probe.stdout:
+                    data = json.loads(probe.stdout)
+                    if isinstance(data, list):
+                        active = next((e for e in data if isinstance(e, dict) and e.get("active") in (True, "True")), None)
+                        if active:
+                            env_name = active.get("name") or env_name
+            except Exception:
+                pass
 
-        # Use Modal SDK to lookup function directly
-        try:
-            func = modal_sdk.Function.from_name(
-                modal_app_name, modal_func_name, environment_name="jason-dev"
-            )
-        except Exception as e:
+        # Use Modal SDK to lookup function directly with short retries to handle propagation
+        func = None
+        last_err = None
+        for i in range(5):
+            try:
+                func = modal_sdk.Function.from_name(
+                    modal_app_name, modal_func_name, environment_name=env_name
+                )
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(1)
+        if func is None:
             if echo:
-                echo(f"Failed to lookup Modal app/function: {e}")
+                echo(f"Failed to lookup Modal app/function: {last_err}")
             return 1
 
         try:

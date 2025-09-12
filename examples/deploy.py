@@ -12,7 +12,7 @@ deployed_flow = (
             "METAFLOW_KUBERNETES_NAMESPACE": "argo",
             "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
             "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-modal",
-            "MODAL_ENVIRONMENT": "jason-dev",
+            "METAFLOW_DEFAULT_CONTAINER_IMAGE": "ghcr.io/thomasjpfan/modal-client:0.0.3",
         },
     )
     .argo_workflows()

@@ -1,4 +1,4 @@
-import time
+import os
 import modal as modal_sdk
 
 from metaflow import FlowSpec, step, modal, metadata, kubernetes
@@ -20,7 +20,6 @@ class ExampleFlow(FlowSpec):
     Example flow demonstrating Modal integration.
     """
 
-    @kubernetes(image="ghcr.io/thomasjpfan/modal-client:0.0.3")
     @step
     def start(self):
         self.data = list(range(1, 6))
@@ -31,6 +30,7 @@ class ExampleFlow(FlowSpec):
     @modal(
         secrets=[aws_secret],
         image=image,
+        environment="jason-dev",
     )
     @step
     def process(self):

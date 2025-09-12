@@ -10,6 +10,8 @@
 - `examples/metadata_service.py`: A Modal App that serves the Metaflow metadata service and metadata DB.
 - `examples/deploy.py`: An Argo Workflows deployment of the `basic.py` example.
 
+TODO: document kube requirements (modal in METAFLOW_CONTAINER_IMAGE or similar, etc.)
+
 ## Argo Instructions
 - Optional: with nix/direnv, run `direnv allow` to get Minikube and the Argo CLI. Otherwise install them and set:
 ```
