@@ -4,11 +4,12 @@
 - `examples/basic.py`: Basic execution example (single @modal step)
 - `examples/join.py`: Branching execution example (multiple @modal steps + join)
 - `examples/foreach.py`: (TODO) Iterative execution example (iterative @modal steps + foreach + join)
-- `examples/outerbounds_lora.py`: Multi-GPU LoRA finetuning
+- `examples/outerbounds/lora.py`: Multi-GPU LoRA finetuning
 
 ## Infra
 - `examples/metadata_service.py`: A Modal App that serves the Metaflow metadata service and metadata DB.
 - `examples/deploy.py`: An Argo Workflows deployment of the `basic.py` example.
+- `examples/outerbounds/deploy.py`: An Argo Workflows deployment of the `lora.py` example.
 
 TODO: document kube requirements (modal in METAFLOW_CONTAINER_IMAGE or similar, etc.)
 
@@ -43,7 +44,7 @@ kubectl apply -n argo -f "https://github.com/argoproj/argo-workflows/releases/do
 
 4) Open the Argo UI:
 ```bash
-kubectl argo port-forward service/argo-server 2746:2746
+kubectl -n argo port-forward service/argo-server 2746:2746
 ```
 
 5) Deploy a Flow with Argo Workflows:

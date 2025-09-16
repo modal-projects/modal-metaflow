@@ -4,18 +4,21 @@ from datetime import datetime, timedelta
 
 from metaflow import Deployer
 
-flow_path = pathlib.Path(__file__).parent / "basic.py"
+
+flow_path = pathlib.Path(__file__).parent / "lora.py"
 deployed_flow = (
     Deployer(
         flow_path.as_posix(),
         datastore="s3",
         datastore_root="s3://metaflow-modal",
         env={
-            "METAFLOW_DEFAULT_METADATA": "service",
-            "METAFLOW_SERVICE_URL": "https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run",
             "METAFLOW_KUBERNETES_NAMESPACE": "argo",
+            "METAFLOW_DEFAULT_METADATA": "service",
+            "METAFLOW_DEFAULT_PACKAGE_SUFFIXES": ".py,.txt",
+            "METAFLOW_SERVICE_URL": "https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run",
             "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
             "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-modal",
+            "METAFLOW_MODAL_ENVIRONMENT": "jason-dev",
             "METAFLOW_DEFAULT_CONTAINER_IMAGE": "ghcr.io/thomasjpfan/modal-client:0.0.3",
         },
     )

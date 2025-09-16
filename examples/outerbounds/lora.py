@@ -4,6 +4,7 @@ import modal as modal_sdk
 from gpu_profile import gpu_profile
 from metaflow import (
     FlowSpec,
+    namespace,
     card,
     checkpoint,
     current,
@@ -22,23 +23,47 @@ metadata(
 )
 
 req_path = pathlib.Path(__file__).parent / "requirements.txt"
+# req_path = "requirements.txt"
+
+# import subprocess
+# import sys
+
+
+# def get_requirements():
+#     requirements = subprocess.run(
+#         [sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True
+#     )
+#     return requirements.stdout.strip().split("\n")
+
+
+# requirements = get_requirements()
+# print(requirements)
+
 hf_image = (
     # NOTE: this image does _not_ work on H100s. the bitsandbytes version shipped
     # here does not have cublas kernels for Hopper
     modal_sdk.Image.from_registry(
         "valayob/hf-transformer-gpu:4.39.3.1", add_python="3.11"
     )
-    .uv_pip_install(requirements=[req_path.as_posix()])
+    # .uv_pip_install(*requirements, force_build=True)
+    .uv_pip_install(requirements=[str(req_path.absolute())])
     .entrypoint([])
 )
-aws_secret = modal_sdk.Secret.from_dotenv("/tmp/", filename="aws_sso.env")
+
+aws_secret = modal_sdk.Secret.from_local_environ(
+    env_keys=["AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID", "AWS_SESSION_TOKEN"]
+)
 
 
 @project(name="chkpt_lora")
 class LlamaInstructionTuning(FlowSpec, HuggingFaceLora):
     @card
     @huggingface_hub
-    @modal(image=hf_image, secrets=[aws_secret])
+    @modal(
+        image=hf_image,
+        secrets=[aws_secret],
+        environment="jason-dev",
+    )
     @step
     def start(self):
         base_model = self.config.model.base_model
@@ -62,7 +87,12 @@ class LlamaInstructionTuning(FlowSpec, HuggingFaceLora):
     @model(load=["hf_model_checkpoint"])
     @checkpoint
     @modal(
-        image=hf_image, gpu=f"A100:{N_GPU}", cpu=14, memory=72000, secrets=[aws_secret]
+        image=hf_image,
+        gpu=f"A100:{N_GPU}",
+        cpu=14,
+        memory=72000,
+        secrets=[aws_secret],
+        environment="jason-dev",
     )
     @retry(times=3)
     @step

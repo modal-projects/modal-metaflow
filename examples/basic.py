@@ -1,7 +1,7 @@
 import os
 import modal as modal_sdk
 
-from metaflow import FlowSpec, step, modal, metadata, kubernetes
+from metaflow import FlowSpec, step, modal, metadata, kubernetes, project
 
 metadata(
     "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
@@ -15,11 +15,17 @@ aws_secret = modal_sdk.Secret.from_local_environ(
 
 
 # Example Metaflow + Modal integration
+@project(name="chkpt_lora")
 class ExampleFlow(FlowSpec):
     """
     Example flow demonstrating Modal integration.
     """
 
+    @modal(
+        secrets=[aws_secret],
+        image=image,
+        environment="jason-dev",
+    )
     @step
     def start(self):
         self.data = list(range(1, 6))

@@ -13,14 +13,13 @@ import time
 import traceback
 from typing import Dict, Optional
 
-from metaflow import util
+from metaflow import namespace, util
 from metaflow._vendor import click
 from metaflow.exception import METAFLOW_EXIT_DISALLOW_RETRY
 from metaflow.metadata_provider.util import sync_local_metadata_from_datastore
 from metaflow.metaflow_config import (
     AWS_SECRETS_MANAGER_DEFAULT_REGION,
     CARD_S3ROOT,
-    SERVICE_URL,
     DATASTORE_LOCAL_DIR,
     DATASTORE_SYSROOT_S3,
     DATATOOLS_S3ROOT,
@@ -29,6 +28,7 @@ from metaflow.metaflow_config import (
     DEFAULT_SECRETS_BACKEND_TYPE,
     OTEL_ENDPOINT,
     S3_ENDPOINT_URL,
+    SERVICE_URL,
 )
 from metaflow.mflog import (
     BASH_SAVE_LOGS,
@@ -85,7 +85,6 @@ def modal():
 )
 @click.option("--modal-app-name", help="Modal app name for function lookup.")
 @click.option("--modal-func-name", help="Modal function name for execution.")
-@click.option("--modal-attrs-json", help="Serialized Modal attributes as JSON.")
 @click.option("--environment", multiple=True, help="Environment variables for Modal.")
 @click.pass_context
 def step(
@@ -98,30 +97,23 @@ def step(
     run_time_limit=None,
     modal_app_name=None,
     modal_func_name=None,
-    modal_attrs_json=None,
     environment=None,
     **kwargs,
 ):
     """Execute a single task using Modal infrastructure."""
-    
+
     # Sanity check - something's gone wrong if we're running inside a Modal worker
     if os.getenv("METAFLOW_MODAL_WORKER") == "1":
         ctx.fail("This command must not be run inside a Modal worker.")
-    
+
     # Validate required arguments
     if not modal_app_name or not modal_func_name:
         ctx.fail("Missing Modal app or function name")
-    
+
     if not code_package_url or not code_package_sha:
-        ctx.fail("Missing code package URL or SHA - ensure Modal app was deployed properly")
-    
-    # Parse serialized attributes if provided (for future use)
-    if modal_attrs_json:
-        try:
-            modal_attrs = json.loads(modal_attrs_json)  # noqa: F841
-            # TODO: Use modal_attrs for enhanced CLI functionality if needed
-        except json.JSONDecodeError:
-            ctx.fail(f"Invalid JSON in modal-attrs-json: {modal_attrs_json}")
+        ctx.fail(
+            "Missing code package URL or SHA - ensure Modal app was deployed properly"
+        )
 
     def echo(msg, stream="stderr", modal_id=None, **kwargs):
         msg = util.to_unicode(msg)
@@ -209,9 +201,13 @@ def step(
         "METAFLOW_AWS_SECRETS_MANAGER_DEFAULT_REGION": AWS_SECRETS_MANAGER_DEFAULT_REGION,
         "METAFLOW_S3_ENDPOINT_URL": S3_ENDPOINT_URL,
         "METAFLOW_OTEL_ENDPOINT": OTEL_ENDPOINT,
+        # Pass production token and user info to ensure namespace consistency between Argo pod and Modal worker
+        "METAFLOW_PRODUCTION_TOKEN": os.environ.get("METAFLOW_PRODUCTION_TOKEN"),
+        "METAFLOW_USER": os.environ.get("METAFLOW_USER"),
     }
 
     # Ensure USERNAME is present for worker environment
+    # This ensures get_username() returns the same value in Modal worker as in Argo pod
     username = os.environ.get("USERNAME")
     if not username:
         try:
@@ -235,7 +231,7 @@ def step(
         task_id=kwargs["task_id"],
         attempt=int(retry_count),
     )
-    # TODO: pipe modal Function stdio to metaflow logs
+    # TODO: proper mflog logging
     # stdout_location = ds.get_log_location(TASK_LOG_SOURCE, "stdout")
     # stderr_location = ds.get_log_location(TASK_LOG_SOURCE, "stderr")
 
@@ -245,7 +241,10 @@ def step(
                 sync_local_metadata_from_datastore(
                     DATASTORE_LOCAL_DIR,
                     ctx.obj.flow_datastore.get_task_datastore(
-                        kwargs["run_id"], step_name, kwargs["task_id"], attempt=int(retry_count)
+                        kwargs["run_id"],
+                        step_name,
+                        kwargs["task_id"],
+                        attempt=int(retry_count),
                     ),
                 )
         except Exception as e:
@@ -265,6 +264,7 @@ def step(
     )
 
     try:
+        print("THERE'S JUST NO WAY", modal_app_name)
         # Execute the Modal task
         exit_code = _execute_modal_task(
             step_cli=shlex.join(step_cli),
@@ -373,7 +373,9 @@ def _execute_modal_task(
         # Arguments are already validated in the step function
 
         # Environment preference: decorator-resolved (via wrapper) > pod envs > CLI inference
-        env_name = os.getenv("METAFLOW_MODAL_ENVIRONMENT") or os.getenv("MODAL_ENVIRONMENT")
+        env_name = os.getenv("METAFLOW_MODAL_ENVIRONMENT") or os.getenv(
+            "MODAL_ENVIRONMENT"
+        )
         if not env_name:
             try:
                 probe = subprocess.run(
@@ -384,7 +386,15 @@ def _execute_modal_task(
                 if probe.returncode == 0 and probe.stdout:
                     data = json.loads(probe.stdout)
                     if isinstance(data, list):
-                        active = next((e for e in data if isinstance(e, dict) and e.get("active") in (True, "True")), None)
+                        active = next(
+                            (
+                                e
+                                for e in data
+                                if isinstance(e, dict)
+                                and e.get("active") in (True, "True")
+                            ),
+                            None,
+                        )
                         if active:
                             env_name = active.get("name") or env_name
             except Exception:
@@ -395,8 +405,11 @@ def _execute_modal_task(
         last_err = None
         for i in range(5):
             try:
+                print("YOOOO WTF", modal_app_name, modal_func_name)
                 func = modal_sdk.Function.from_name(
-                    modal_app_name, modal_func_name, environment_name=env_name
+                    modal_app_name,
+                    modal_func_name,
+                    environment_name=env_name,
                 )
                 break
             except Exception as e:

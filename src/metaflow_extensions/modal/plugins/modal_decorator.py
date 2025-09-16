@@ -10,15 +10,16 @@ import os
 import subprocess
 import sys
 import uuid
+from functools import partial
 from typing import Optional
 
-from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
-from metaflow.metadata_provider.util import sync_local_metadata_to_datastore
 import modal as modal_sdk
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
+from metaflow.metadata_provider.util import sync_local_metadata_to_datastore
 from metaflow.metaflow_config import (
+    DATASTORE_LOCAL_DIR,
     DEFAULT_RUNTIME_LIMIT,
     FEAT_ALWAYS_UPLOAD_CODE_PACKAGE,
 )
@@ -29,24 +30,50 @@ def in_modal_worker() -> bool:
     return os.getenv("METAFLOW_MODAL_WORKER") == "1"
 
 
+def _sanitize_modal_app_name(flow_name: str, run_id: str, step_name: str) -> str:
+    """
+    Sanitize app name to meet Modal's requirements:
+    - Only alphanumeric characters, dashes, periods, and underscores
+    - Must be shorter than 64 characters
+    - Cannot conflict with App ID strings
+    """
+    import hashlib
+
+    # Replace dots with dashes to avoid issues
+    clean_flow_name = flow_name.replace(".", "-")
+    clean_run_id = run_id.replace(".", "-")
+
+    # Create base name
+    print("FLOW NAME", flow_name, "CLEAN", clean_flow_name)
+    base_name = f"{clean_flow_name}-{clean_run_id}-{step_name}"
+
+    # If too long, truncate and add hash suffix for uniqueness
+    if len(base_name) > 63:  # Leave room for potential suffixes
+        # Create a short hash of the full name to ensure uniqueness
+        full_hash = hashlib.sha256(base_name.encode()).hexdigest()[:8]
+
+        # Truncate the base name and add hash
+        max_base_len = 63 - 9  # 8 chars for hash + 1 for dash
+        truncated_base = base_name[:max_base_len].rstrip("-")
+        base_name = f"{truncated_base}-{full_hash}"
+
+    return base_name
+
+
 def _get_or_create_modal_app(
-    flow_name: str, 
-    run_id: str, 
-    step_name: str,
+    app_name: str,
+    func_name: str,
     modal_func_kwargs: dict,
-    modal_environment: Optional[str] = None
+    modal_environment: Optional[str] = None,
 ) -> tuple[modal_sdk.App, str]:
     """
     Get or create a Modal app using deterministic naming.
     Returns (app, function_name).
-    
+
     Uses Modal's built-in idempotency - multiple processes can safely
     call this with the same parameters.
     """
-    # Generate deterministic names
-    app_name = f"{flow_name}-{run_id}-{step_name}"
-    func_name = f"{flow_name}__{step_name}"
-    
+
     try:
         # Try to lookup existing app first
         app = modal_sdk.App.lookup(app_name, environment_name=modal_environment)
@@ -55,20 +82,50 @@ def _get_or_create_modal_app(
         # App doesn't exist, deploy it
         # Create and deploy the app
         app = modal_sdk.App(name=app_name)
-        
+
         # Ensure the function has the correct name
         modal_func_kwargs["name"] = func_name
-        
+
         @app.function(**modal_func_kwargs)
         def metaflow_entry(step_cli: str, env_vars: dict):
-            import subprocess
             import os
-            
+            import subprocess
+
+            print(f"[Modal Worker Debug] FULL step_cli: {step_cli}")
+
+            # Debug: Log what metadata configuration Modal worker receives
+            print(f"[Modal Worker Debug] Environment variables received:")
+            print(
+                f"[Modal Worker Debug] METAFLOW_DEFAULT_METADATA: {env_vars.get('METAFLOW_DEFAULT_METADATA')}"
+            )
+            print(
+                f"[Modal Worker Debug] METAFLOW_SERVICE_URL: {env_vars.get('METAFLOW_SERVICE_URL')}"
+            )
+            print(
+                f"[Modal Worker Debug] METAFLOW_RUN_ID: {env_vars.get('METAFLOW_RUN_ID')}"
+            )
+
             try:
                 # Merge environment variables
                 if env_vars:
                     os.environ.update(env_vars)
-                    
+
+                # Debug: Verify environment variables are set
+                print(f"[Modal Worker Debug] After setting env vars:")
+                print(
+                    f"[Modal Worker Debug] os.environ METAFLOW_DEFAULT_METADATA: {os.environ.get('METAFLOW_DEFAULT_METADATA')}"
+                )
+                print(
+                    f"[Modal Worker Debug] os.environ METAFLOW_SERVICE_URL: {os.environ.get('METAFLOW_SERVICE_URL')}"
+                )
+                pycheck = subprocess.run(
+                    "which python",
+                    shell=True,
+                    executable="/bin/bash",  # Force bash for bash-specific syntax
+                    capture_output=True,
+                )
+                print("[Modal Worker Debug] PYCHECK OUTPUT", pycheck.stdout)
+
                 completed = subprocess.run(
                     step_cli,
                     shell=True,
@@ -76,29 +133,57 @@ def _get_or_create_modal_app(
                     capture_output=True,
                 )
                 stdout = (
-                    completed.stdout.decode(errors="ignore")
-                    if completed.stdout
-                    else ""
+                    completed.stdout.decode(errors="ignore") if completed.stdout else ""
                 )
                 stderr = (
-                    completed.stderr.decode(errors="ignore")
-                    if completed.stderr
-                    else ""
+                    completed.stderr.decode(errors="ignore") if completed.stderr else ""
                 )
+                print(stdout)
+                print(stderr, file=sys.stderr)
                 return completed.returncode, stdout, stderr
             except Exception:
                 import traceback as _tb
+
                 err = _tb.format_exc()
+                print(err, file=sys.stderr)
                 return 1, "", err
-        
+
         # Deploy the app
+        print("WHERE AM I")
+        dirres = subprocess.run("ls -lh /metaflow", shell=True, capture_output=True)
+        print("[Modal Debug]", dirres.stdout.decode())
         if modal_environment:
+            # TODO
             os.environ["MODAL_ENVIRONMENT"] = modal_environment
             app.deploy(environment_name=modal_environment)
         else:
             app.deploy()
-            
+
         return app, func_name
+
+
+patch_allow = [
+    "step_init",
+    # "package_init",
+    # "add_to_package",
+    "step_task_retry_count",
+    "runtime_init",
+    "runtime_task_created",
+    "runtime_finished",
+    "runtime_step_cli",
+    "task_pre_step",
+    "task_decorate",
+    "task_post_step",
+    "task_exception",
+    "task_finished",
+]
+
+
+def patch_decorator(deco):
+    s = StepDecorator()
+    for method_name in patch_allow:
+        method = getattr(s, method_name)
+        setattr(deco, method_name, method)
 
 
 class ModalDecoratorException(MetaflowException):
@@ -130,6 +215,7 @@ class ModalDecorator(StepDecorator):
     package_metadata = None
     package_url = None
     package_sha = None
+    _metaflow_home = None
 
     def init(self):
         self.env_vars = None
@@ -221,7 +307,7 @@ class ModalDecorator(StepDecorator):
             raise ModalDecoratorException(
                 "The *@modal* decorator requires --datastore=s3 at the moment."
             )
-        
+
         # Store basic context
         self.environment = environment
         self.flow_datastore = flow_datastore
@@ -236,6 +322,7 @@ class ModalDecorator(StepDecorator):
 
     def _handle_decorator_interactions(self, decorators):
         """Handle interactions with other decorators, especially Argo-injected ones."""
+        in_argo = False
         for deco in decorators:
             if hasattr(deco, "name"):
                 if deco.name == "kubernetes":
@@ -247,6 +334,7 @@ class ModalDecorator(StepDecorator):
                         )
                     else:
                         # Argo injected @kubernetes. Minimize pod resources and inject required secrets
+                        in_argo = True
                         k8s_attrs = deco.attributes
                         # Minimize resources for the launcher pod
                         k8s_attrs["cpu"] = str(0.1)
@@ -257,7 +345,10 @@ class ModalDecorator(StepDecorator):
                         k8s_attrs["use_tmpfs"] = False
                         k8s_attrs["tmpfs_size"] = None
                         k8s_attrs["shared_memory"] = None
-                        k8s_attrs["image"] = os.getenv("METAFLOW_DEFAULT_IMAGE") or "ghcr.io/thomasjpfan/modal-client:0.0.3"
+                        k8s_attrs["image"] = (
+                            os.getenv("METAFLOW_DEFAULT_IMAGE")
+                            or "ghcr.io/thomasjpfan/modal-client:0.0.3"
+                        )
 
                         # Per-step Modal secret injection
                         modal_secret_name = os.environ.get(
@@ -326,7 +417,9 @@ class ModalDecorator(StepDecorator):
                     if hasattr(deco, "gpu") and deco.gpu is not None:
                         gpu_cfg = self.attributes.pop("gpu", None)
                         self.attributes["gpu"] = _handle_gpu_cfg(
-                            gpu_cfg, deco.gpu, lambda msg, **kwargs: print(f"[Modal] {msg}")
+                            gpu_cfg,
+                            deco.gpu,
+                            lambda msg, **kwargs: print(f"[Modal] {msg}"),
                         )
 
                     if hasattr(deco, "disk") and deco.disk is not None:
@@ -345,6 +438,14 @@ class ModalDecorator(StepDecorator):
                     ):
                         pass  # Modal backend does not use shared_memory
 
+        # if we deployed with argo, but are not yet in the modal worker
+        # then we want to disable all other decorators to prevent them from running twice
+        # in modal worker we skip, so that the decorators can run there.
+        if not in_modal_worker() and in_argo:
+            for deco in decorators:
+                if deco.name in ["model", "checkpoint"]:
+                    patch_decorator(deco)
+
     def runtime_init(self, flow, graph, package, run_id):
         """Deploy Modal app and save package info for local execution."""
         # Store flow context
@@ -352,30 +453,43 @@ class ModalDecorator(StepDecorator):
         self.graph = graph
         self.package = package
         self.run_id = run_id
-        
+
         # Skip if we're running inside a Modal worker
         if in_modal_worker():
             return
-        
+
         # Save code package for local execution
         self._save_package_once(self.flow_datastore, package)
-        
+
+        # Extract the full code package (including non-Python files like requirements.txt)
+        # following the @conda decorator pattern for accessing external files
+        if self.__class__._metaflow_home is None:
+            import tempfile
+
+            from metaflow.packaging_sys import ContentType
+
+            # Do this ONCE per flow - use class-level shared directory
+            self.__class__._metaflow_home = tempfile.TemporaryDirectory(dir="/tmp")
+            package.extract_into(
+                self.__class__._metaflow_home.name, ContentType.ALL_CONTENT
+            )
+
         # Deploy Modal app for local execution
-        step_name = getattr(self, 'step_name', 'unknown')
-        
+        step_name = getattr(self, "step_name", "unknown")
+
         # Get Modal environment
         modal_environment = (
             self.attributes.get("environment")
             or os.environ.get("METAFLOW_MODAL_ENVIRONMENT")
             or os.environ.get("MODAL_ENVIRONMENT")
         )
-        
+
         # Build Modal function kwargs
         modal_func_kwargs = {
             "serialized": True,
             "timeout": int(self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)),
         }
-        
+
         # Add optional attributes
         if self.attributes.get("image") is not None:
             modal_func_kwargs["image"] = self.attributes["image"]
@@ -391,20 +505,24 @@ class ModalDecorator(StepDecorator):
             modal_func_kwargs["retries"] = self.attributes["retries"]
         if self.attributes.get("volumes"):
             modal_func_kwargs["volumes"] = self.attributes["volumes"]
-        
+
         # Deploy the app for local execution
         try:
+            flow_name = flow.name
+            app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
+            func_name = f"{flow_name}__{step_name}"
             app, _ = _get_or_create_modal_app(
-                flow_name=flow.name,
-                run_id=run_id,
-                step_name=step_name,
+                app_name,
+                func_name,
                 modal_func_kwargs=modal_func_kwargs,
-                modal_environment=modal_environment
+                modal_environment=modal_environment,
             )
             # Save app ID for cleanup
             self.deployed_app_id = getattr(app, "app_id", None)
         except Exception as e:
-            raise ModalDecoratorException(f"Failed to deploy Modal app in runtime_init: {e}")
+            raise ModalDecoratorException(
+                f"Failed to deploy Modal app in runtime_init: {e}"
+            )
 
     def runtime_task_created(
         self, task_datastore, task_id, split_index, input_paths, is_cloned, ubf_context
@@ -418,29 +536,38 @@ class ModalDecorator(StepDecorator):
         """Rewrite CLI to use modal execution (works in local, no-op in Argo)."""
         if retry_count <= max_user_code_retries:
             # Get package info from class variables (set by runtime_init)
-            package_url = getattr(self.__class__, 'package_url', None)
-            package_sha = getattr(self.__class__, 'package_sha', None) 
-            package_metadata = getattr(self.__class__, 'package_metadata', None)
-            
+            package_url = getattr(self.__class__, "package_url", None)
+            package_sha = getattr(self.__class__, "package_sha", None)
+            package_metadata = getattr(self.__class__, "package_metadata", None)
+
             # Only rewrite CLI if we have package info (local execution)
             if package_url:
                 cli_args.commands = ["modal", "step"]
-                cli_args.command_args.extend([package_metadata or "", package_sha or "", package_url or ""])
-                
-                # Add Modal-specific arguments  
-                flow_name = getattr(self.flow, 'name', 'unknown')
-                step_name = getattr(self, 'step_name', 'unknown')
-                run_id = getattr(self, 'run_id', 'unknown')
-                
-                cli_args.command_options["modal-app-name"] = f"{flow_name}-{run_id}-{step_name}"
-                cli_args.command_options["modal-func-name"] = f"{flow_name}__{step_name}"
-                cli_args.command_options["run-time-limit"] = self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)
+                cli_args.command_args.extend(
+                    [package_metadata or "", package_sha or "", package_url or ""]
+                )
+
+                # Add Modal-specific arguments
+                flow_name = getattr(self.flow, "name", "unknown")
+                step_name = getattr(self, "step_name", "unknown")
+                run_id = getattr(self, "run_id", "unknown")
+                app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
+
+                cli_args.command_options["modal-app-name"] = app_name
+                cli_args.command_options["modal-func-name"] = (
+                    f"{flow_name}__{step_name}"
+                )
+                cli_args.command_options["run-time-limit"] = self.attributes.get(
+                    "timeout", DEFAULT_RUNTIME_LIMIT
+                )
             else:
-                print("[Modal] No package info - CLI rewrite skipped, will use task_decorate")
+                print(
+                    "[Modal] No package info - CLI rewrite skipped, will use task_decorate"
+                )
 
     def runtime_finished(self, exception):
         """Clean up deployed Modal app for local execution."""
-        if hasattr(self, 'deployed_app_id') and self.deployed_app_id:
+        if hasattr(self, "deployed_app_id") and self.deployed_app_id:
             try:
                 stop_cmd = ["modal", "app", "stop", str(self.deployed_app_id)]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
@@ -463,6 +590,33 @@ class ModalDecorator(StepDecorator):
         inputs,
     ):
         """Task pre-step hook - capture code package info for task_decorate."""
+        # Debug: Log metadata configuration and namespace in Argo pod
+        import os
+
+        from metaflow import get_namespace
+        from metaflow.util import get_username, resolve_identity
+
+        print(f"[Modal Debug] task_pre_step in Argo pod:")
+        print(
+            f"[Modal Debug] METAFLOW_DEFAULT_METADATA: {os.environ.get('METAFLOW_DEFAULT_METADATA')}"
+        )
+        print(
+            f"[Modal Debug] METAFLOW_SERVICE_URL: {os.environ.get('METAFLOW_SERVICE_URL')}"
+        )
+        print(f"[Modal Debug] run_id: {run_id}")
+        print(
+            f"[Modal Debug] Metadata backend type: {metadata.TYPE if hasattr(metadata, 'TYPE') else 'UNKNOWN'}"
+        )
+        print(f"[Modal Debug] Current namespace (before): {get_namespace()}")
+        print(f"[Modal Debug] Resolved identity: {resolve_identity()}")
+        print(f"[Modal Debug] Username: {get_username()}")
+        print(f"[Modal Debug] USER env: {os.environ.get('USER')}")
+        print(f"[Modal Debug] USERNAME env: {os.environ.get('USERNAME')}")
+        print(f"[Modal Debug] METAFLOW_USER env: {os.environ.get('METAFLOW_USER')}")
+        print(
+            f"[Modal Debug] METAFLOW_PRODUCTION_TOKEN env: {os.environ.get('METAFLOW_PRODUCTION_TOKEN')}"
+        )
+
         # Skip if we're inside a Modal worker
         if in_modal_worker():
             return
@@ -479,9 +633,9 @@ class ModalDecorator(StepDecorator):
         self._code_package_url = os.environ.get("METAFLOW_CODE_URL")
         self._code_package_sha = os.environ.get("METAFLOW_CODE_SHA")
         self._code_package_metadata = os.environ.get("METAFLOW_CODE_METADATA")
-        
+
         # 2. Try to access through flow's package if available
-        if hasattr(flow, '_package'):
+        if hasattr(flow, "_package"):
             try:
                 test_url = flow._package.package_url()
                 test_sha = flow._package.package_sha()
@@ -492,9 +646,9 @@ class ModalDecorator(StepDecorator):
                     self._code_package_metadata = test_metadata
             except Exception:
                 pass
-        
+
         # 3. Try to access class-level package info if available
-        if not self._code_package_url and hasattr(self.__class__, 'package_url'):
+        if not self._code_package_url and hasattr(self.__class__, "package_url"):
             self._code_package_url = self.__class__.package_url
             self._code_package_sha = self.__class__.package_sha
             self._code_package_metadata = self.__class__.package_metadata
@@ -521,12 +675,16 @@ class ModalDecorator(StepDecorator):
     ):
         """Task decorate hook - fallback for Argo execution only."""
         # If we're inside a Modal worker, execute user code directly
+
         if in_modal_worker():
+            print("[Modal Worker Debug]: in task_decorate")
+            print(f"[Modal Worker Debug]: image {self.attributes.get('image')}")
+            print(f"[Modal Worker Debug]: all attributes {self.attributes}")
             return step_func
-        
+
         # Check if this is local execution where runtime_step_cli should have handled this
         # In local execution, runtime_* hooks run and package info is available
-        package_url = getattr(self.__class__, 'package_url', None)
+        package_url = getattr(self.__class__, "package_url", None)
         if package_url:
             # In local execution, the CLI should have been rewritten by runtime_step_cli
             # If we're here, something went wrong with the CLI rewrite
@@ -534,36 +692,59 @@ class ModalDecorator(StepDecorator):
                 raise ModalDecoratorException(
                     "Local execution: CLI rewrite failed. Expected modal CLI to be called, but task wrapper invoked."
                 )
+
             return error_wrapper
-        
+
         # This is Argo execution - deploy app and execute via Modal
-        
+
         def wrapper(*args, **kwargs):
+            print("[Modal Debug] in task_decorate wrapper")
             try:
+                # Extract the full code package (including non-Python files like requirements.txt)
+                # following the @conda decorator pattern for accessing external files in Argo execution
+                if self.__class__._metaflow_home is None:
+                    import tempfile
+
+                    from metaflow.packaging_sys import ContentType
+
+                    # Do this ONCE per flow - use class-level shared directory
+                    self.__class__._metaflow_home = tempfile.TemporaryDirectory(
+                        dir="/tmp"
+                    )
+                    # In Argo, the package is already downloaded and available through the flow
+                    if hasattr(flow, "_package"):
+                        flow._package.extract_into(
+                            self.__class__._metaflow_home.name, ContentType.ALL_CONTENT
+                        )
+
                 # Get code package information from environment variables (set by Argo)
                 code_package_url = os.environ.get("METAFLOW_CODE_URL")
                 code_package_sha = os.environ.get("METAFLOW_CODE_SHA")
                 code_package_metadata = os.environ.get("METAFLOW_CODE_METADATA")
-                
+
                 if not code_package_url:
                     raise ModalDecoratorException(
                         "Argo execution: Code package URL not available from environment variables. "
                         "Ensure Argo is properly configured with METAFLOW_CODE_* variables."
                     )
-                
+
                 # Get flow and step context
                 flow_name = flow.name
-                run_id = os.getenv('METAFLOW_RUN_ID', str(uuid.uuid4()))
+                run_id = os.getenv("METAFLOW_RUN_ID", str(uuid.uuid4()))
                 step_name = step_func.__name__
-                
+
                 # Build Modal function kwargs
                 modal_func_kwargs = {
                     "serialized": True,
-                    "timeout": int(self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)),
+                    "timeout": int(
+                        self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)
+                    ),
                 }
-                
+
                 # Add optional attributes
+                print(f"[Modal Worker Debug]: all attributes {self.attributes}")
                 if self.attributes.get("image") is not None:
+                    print(f"[Modal Debug] image: {self.attributes['image']}")
                     modal_func_kwargs["image"] = self.attributes["image"]
                 if self.attributes.get("secrets"):
                     modal_func_kwargs["secrets"] = self.attributes["secrets"]
@@ -577,92 +758,106 @@ class ModalDecorator(StepDecorator):
                     modal_func_kwargs["retries"] = self.attributes["retries"]
                 if self.attributes.get("volumes"):
                     modal_func_kwargs["volumes"] = self.attributes["volumes"]
-                
+
                 # Get Modal environment
                 modal_environment = (
                     self.attributes.get("environment")
                     or os.environ.get("METAFLOW_MODAL_ENVIRONMENT")
                     or os.environ.get("MODAL_ENVIRONMENT")
                 )
-                
+
                 # Deploy the Modal app first (needed before calling modal CLI)
+                app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
+                func_name = f"{flow_name}__{step_name}"
                 app, func_name = _get_or_create_modal_app(
-                    flow_name=flow_name,
-                    run_id=run_id,
-                    step_name=step_name,
+                    app_name,
+                    func_name,
                     modal_func_kwargs=modal_func_kwargs,
-                    modal_environment=modal_environment
+                    modal_environment=modal_environment,
                 )
-                
+
+                # Store app info for cleanup in task_finished
+                self.argo_deployed_app_id = getattr(app, "app_id", None)
+                self.argo_app_name = app.name if app else None
+
                 # Now call modal CLI which will find the deployed app
-                task_id = os.getenv('METAFLOW_TASK_ID', 'unknown')
-                
+                task_id = os.getenv("METAFLOW_TASK_ID", "unknown")
+
                 # Build modal CLI command (same pattern as runtime_step_cli)
-                script_name = os.environ.get('METAFLOW_FLOW_FILENAME', 'basic.py')
-                
+                script_name = os.environ.get("METAFLOW_FLOW_FILENAME", "basic.py")
+
                 # Extract input paths from sys.argv (Oracle's fix)
                 def _extract_input_paths():
                     """Extract input paths from sys.argv, handling both CLI args and env vars."""
                     # First try environment variable
-                    if 'METAFLOW_INPUT_PATHS' in os.environ:
-                        return os.environ['METAFLOW_INPUT_PATHS']
-                    
+                    if "METAFLOW_INPUT_PATHS" in os.environ:
+                        return os.environ["METAFLOW_INPUT_PATHS"]
+
                     # Then try split environment variables
-                    pieces = [os.environ[k] for k in sorted(os.environ)
-                              if k.startswith('METAFLOW_INPUT_PATHS_')]
+                    pieces = [
+                        os.environ[k]
+                        for k in sorted(os.environ)
+                        if k.startswith("METAFLOW_INPUT_PATHS_")
+                    ]
                     if pieces:
-                        return ''.join(pieces)
-                    
+                        return "".join(pieces)
+
                     # Finally extract from sys.argv
                     try:
-                        idx = sys.argv.index('--input-paths')
+                        idx = sys.argv.index("--input-paths")
                         if idx + 1 < len(sys.argv):
                             return sys.argv[idx + 1]
                     except (ValueError, IndexError):
                         pass
-                    
-                    return ''
-                
+
+                    return ""
+
                 input_paths = _extract_input_paths()
-                
+
                 modal_cmd = [
                     sys.executable,
                     script_name,  # basic.py
                     "modal",
-                    "step", 
+                    "step",
                     step_name,
                     code_package_metadata,
                     code_package_sha,
                     code_package_url,
-                    "--modal-app-name", f"{flow_name}-{run_id}-{step_name}",
-                    "--modal-func-name", f"{flow_name}__{step_name}",
-                    "--run-id", run_id,
-                    "--task-id", task_id,
+                    "--modal-app-name",
+                    app_name,
+                    "--modal-func-name",
+                    func_name,
+                    "--run-id",
+                    run_id,
+                    "--task-id",
+                    task_id,
                 ]
-                
+
                 # Add input-paths if available
                 if input_paths:
                     modal_cmd.extend(["--input-paths", input_paths])
-                
+
                 # Add environment variables if we have them
-                if hasattr(self, 'env_vars') and self.env_vars:
+                if hasattr(self, "env_vars") and self.env_vars:
                     for k, v in self.env_vars.items():
                         modal_cmd.extend(["--environment", f"{k}={v}"])
-                
+
                 if modal_environment:
-                    modal_cmd.extend(["--environment", f"METAFLOW_MODAL_ENVIRONMENT={modal_environment}"])
-                
+                    modal_cmd.extend(
+                        [
+                            "--environment",
+                            f"METAFLOW_MODAL_ENVIRONMENT={modal_environment}",
+                        ]
+                    )
+
                 # Execute the modal CLI from the Argo pod
                 completed = subprocess.run(
-                    modal_cmd,
-                    capture_output=True,
-                    text=True,
-                    env=dict(os.environ)
+                    modal_cmd, capture_output=True, text=True, env=dict(os.environ)
                 )
-                
+
                 # Process modal CLI results
                 exit_code = completed.returncode
-                
+
                 if exit_code != 0:
                     stdout = completed.stdout or ""
                     stderr = completed.stderr or ""
@@ -670,27 +865,29 @@ class ModalDecorator(StepDecorator):
                         f"Modal CLI failed with exit code {exit_code}. "
                         f"STDOUT: {stdout} STDERR: {stderr}"
                     )
-                
+
                 # Load artifacts produced by Modal worker back into local flow
                 try:
                     # Get the datastore for this task
                     task_datastore = self.flow_datastore.get_task_datastore(
-                        run_id, step_name, task_id, mode='r'
+                        run_id, step_name, task_id, mode="r"
                     )
-                    
+
                     # Set the datastore on the flow object - artifacts will be loaded on-demand
                     flow._set_datastore(task_datastore)
-                    
+
                 except Exception as e:
                     # This is a critical failure - artifact persistence won't work
-                    raise ModalDecoratorException(f"Failed to load artifacts from Modal worker: {e}")
-                
+                    raise ModalDecoratorException(
+                        f"Failed to load artifacts from Modal worker: {e}"
+                    )
+
                 # Return None to skip local execution
                 return None
-                
+
             except Exception as e:
                 raise ModalDecoratorException(f"Modal Argo execution failed: {e}")
-        
+
         return wrapper
 
     def task_post_step(
@@ -712,9 +909,20 @@ class ModalDecorator(StepDecorator):
         if hasattr(self, "metadata") and self.metadata.TYPE == "local":
             # Note that the datastore is *always* Amazon S3 (see
             # runtime_task_created function).
+            print("[Modal] Syncing local metadata to datastore")
             sync_local_metadata_to_datastore(DATASTORE_LOCAL_DIR, self.task_datastore)
 
-        # Cleanup handled in task wrapper via best-effort stop.
+        # Clean up Modal app deployed in Argo execution
+        if hasattr(self, "argo_deployed_app_id") and self.argo_deployed_app_id:
+            try:
+                import subprocess
+
+                stop_cmd = ["modal", "app", "stop", str(self.argo_deployed_app_id)]
+                subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
+            except Exception:
+                # App cleanup failures are non-fatal
+                pass
+
         return
 
     @classmethod
@@ -813,7 +1021,5 @@ def _handle_gpu_cfg(
                 return f"{gpu_split}:{resources_gpu}"
 
     elif isinstance(modal_gpu, list):
-        logger(
-            "Complex GPU type requested in @modal step, ignoring @resources gpu."
-        )
+        logger("Complex GPU type requested in @modal step, ignoring @resources gpu.")
         return modal_gpu
