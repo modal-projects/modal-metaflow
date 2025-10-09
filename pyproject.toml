@@ -27,6 +27,7 @@ venv = ".venv"
 [dependency-groups]
 dev = [
     "invoke>=2.2.0",
+    "kubernetes>=34.1.0",
     "psycopg[binary]>=3.2.10",
     "pytest>=8.4.2",
 ]

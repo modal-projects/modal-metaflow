@@ -1,3 +1,5 @@
+from subprocess import run
+import shutil
 import json
 from textwrap import dedent
 from pathlib import Path
@@ -8,6 +10,10 @@ from contextlib import suppress
 import modal
 from typing import NamedTuple
 import time
+
+K8S_NAMESPACE = "argo"
+ARGO_WORKFLOWS_VERSION = "v3.7.2"
+CLUSTER_NAME = "metaflow-argo"
 
 
 class Minio(NamedTuple):
@@ -349,6 +355,8 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
         "METAFLOW_DEFAULT_METADATA": "service",
         "METAFLOW_SERVICE_URL": mf_service.metadata_service.url,
         "METAFLOW_SERVICE_INTERNAL_URL": mf_service.metadata_service.url,
+        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
+        "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
     }
     sandbox_ids = [
         mf_service.minio.sandbox.object_id,
@@ -382,6 +390,13 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
     source_path = mf_home / "activate"
     source_path.write_text(source_content)
 
+    aws_dot_file = mf_home / "aws_creds.env"
+    aws_dot_content = dedent(f"""\
+    AWS_ACCESS_KEY_ID={mf_service.minio.key}
+    AWS_SECRET_ACCESS_KEY={mf_service.minio.secret}
+    AWS_DEFAULT_REGION=us-us-east-1""")
+    aws_dot_file.write_text(aws_dot_content)
+
     return source_path
 
 
@@ -401,6 +416,8 @@ def terminate_sandboxes(mf_home: Path):
         mf_home / "sandbox_ids.json",
         mf_home / "config_modal.json",
         mf_home / "aws_config",
+        mf_home / "aws_creds.env",
+        mf_home / "activate",
     ]
 
     for path in paths_to_remove:
@@ -436,3 +453,98 @@ def create_metaflow_sandboxes(
     return MetaflowService(
         minio=minio, psql=psql, metadata_service=metadata_service, ui=ui
     )
+
+
+def _check_k3d_kube() -> tuple[str, str]:
+    k3d = shutil.which("k3d")
+    if k3d is None:
+        raise RuntimeError("k3d is not installed")
+
+    kubectl = shutil.which("kubectl")
+
+    if kubectl is None:
+        raise RuntimeError("kubectl is not installed")
+    return k3d, kubectl
+
+
+def check_cluster_exists(k3d: str, name: str) -> bool:
+    list_result = run(
+        [k3d, "cluster", "list", "--output", "json"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    clusters = json.loads(list_result.stdout)
+    for cluster in clusters:
+        if cluster["name"] == name:
+            return True
+    return False
+
+
+def check_namespace_exists(kubectl: str, namespace: str) -> bool:
+    namespace_result = run(
+        [kubectl, "get", "ns", "--output", "json"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    namespace_list = json.loads(namespace_result.stdout)
+    for namespace_item in namespace_list["items"]:
+        if namespace_item["metadata"]["name"] == namespace:
+            return True
+    return False
+
+
+def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret: str):
+    k3d, kubectl = _check_k3d_kube()
+
+    if not check_cluster_exists(k3d, CLUSTER_NAME):
+        run([k3d, "cluster", "create", CLUSTER_NAME], check=True)
+
+    if not check_namespace_exists(kubectl, K8S_NAMESPACE):
+        run([kubectl, "create", "namespace", K8S_NAMESPACE], check=True)
+
+    aws_dot_file = str((mf_home / "aws_creds.env").absolute())
+    run(
+        [
+            kubectl,
+            "create",
+            "secret",
+            "generic",
+            "s3-credentials",
+            "--from-env-file",
+            aws_dot_file,
+        ],
+        check=True,
+    )
+
+    run(
+        [
+            kubectl,
+            "create",
+            "secret",
+            "generic",
+            "modal-argo-creds",
+            f"--from-literal=MODAL_TOKEN_ID={modal_token_id}",
+            f"--from-literal=MODAL_TOKEN_SECRET={modal_token_secret}",
+        ],
+        check=True,
+    )
+
+    run(
+        [
+            kubectl,
+            "apply",
+            "-n",
+            "argo",
+            "-f",
+            "https://github.com/argoproj/argo-workflows/releases/download"
+            f"/{ARGO_WORKFLOWS_VERSION}/quick-start-minimal.yaml",
+        ],
+        check=True,
+    )
+
+
+def stop_argo_kubernetes():
+    k3d, _ = _check_k3d_kube()
+    run([k3d, "cluster", "delete", "metaflow-argo"])
