@@ -17,6 +17,9 @@ CLUSTER_NAME = "metaflow-argo"
 S3_SECRET_NAME = "s3-credentials"
 MODAL_SECRET_NAME = "modal-argo-creds"
 
+# TODO: This should be configurable
+METAFLOW_DEFAULT_CONTAINER_IMAGE = "ghcr.io/thomasjpfan/modal-client:0.0.3"
+
 
 class Minio(NamedTuple):
     sandbox: modal.Sandbox
@@ -360,6 +363,7 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
         "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_SECRET_NAME}",
         "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
         "METAFLOW_S3_ENDPOINT_URL": mf_service.minio.endpoint,
+        "METAFLOW_DEFAULT_CONTAINER_IMAGE": METAFLOW_DEFAULT_CONTAINER_IMAGE,
     }
     sandbox_ids = [
         mf_service.minio.sandbox.object_id,
