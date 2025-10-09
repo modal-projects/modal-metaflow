@@ -1,6 +1,6 @@
 from pathlib import Path
 from invoke.tasks import task
-from tests.services import create_metaflow_sandboxes, write_config, terminate_sandboxes
+from tests.scaffold import create_metaflow_sandboxes, write_config, terminate_sandboxes
 from textwrap import dedent
 
 project_root = Path(__file__).parent
