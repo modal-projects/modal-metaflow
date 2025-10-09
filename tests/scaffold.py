@@ -342,6 +342,25 @@ def create_metaflow_ui_sandbox(
     return MetaflowUI(sandbox=metaflow_ui_sb, url=metaflow_ui_sb.tunnels()[8083].url)
 
 
+def construct_env(mf_service: MetaflowService) -> dict:
+    mf_config = {
+        "METAFLOW_DATASTORE_SYSROOT_S3": f"s3://{mf_service.minio.bucket}",
+        "METAFLOW_DEFAULT_DATASTORE": "s3",
+        "METAFLOW_DEFAULT_METADATA": "service",
+        "METAFLOW_SERVICE_URL": mf_service.metadata_service.url,
+        "METAFLOW_SERVICE_INTERNAL_URL": mf_service.metadata_service.url,
+        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_SECRET_NAME}",
+        "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
+        "METAFLOW_S3_ENDPOINT_URL": mf_service.minio.endpoint,
+        "METAFLOW_DEFAULT_CONTAINER_IMAGE": METAFLOW_DEFAULT_CONTAINER_IMAGE,
+    }
+
+    if mf_service.ui:
+        mf_config["METAFLOW_UI_URL"] = mf_service.ui.url
+
+    return mf_config
+
+
 def write_config(mf_home: Path, mf_service: MetaflowService):
     mf_home.mkdir(exist_ok=True, parents=True)
     s3_config_path = mf_home / "aws_config"
@@ -354,27 +373,15 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
     """)
     s3_config_path.write_text(config)
 
-    mf_config = {
-        "METAFLOW_DATASTORE_SYSROOT_S3": f"s3://{mf_service.minio.bucket}",
-        "METAFLOW_DEFAULT_DATASTORE": "s3",
-        "METAFLOW_DEFAULT_METADATA": "service",
-        "METAFLOW_SERVICE_URL": mf_service.metadata_service.url,
-        "METAFLOW_SERVICE_INTERNAL_URL": mf_service.metadata_service.url,
-        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_SECRET_NAME}",
-        "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
-        "METAFLOW_S3_ENDPOINT_URL": mf_service.minio.endpoint,
-        "METAFLOW_DEFAULT_CONTAINER_IMAGE": METAFLOW_DEFAULT_CONTAINER_IMAGE,
-    }
     sandbox_ids = [
         mf_service.minio.sandbox.object_id,
         mf_service.psql.sandbox.object_id,
         mf_service.metadata_service.sandbox.object_id,
     ]
-
     if mf_service.ui:
-        mf_config["METAFLOW_UI_URL"] = mf_service.ui.url
         sandbox_ids.append(mf_service.ui.sandbox.object_id)
 
+    mf_config = construct_env(mf_service)
     modal_metaflow_path = mf_home / "config_modal.json"
     modal_metaflow_path.write_text(json.dumps(mf_config, indent=4))
 
