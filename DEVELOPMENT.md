@@ -29,3 +29,12 @@ uv run tests/flows/hello_world.py argo-workflows trigger
 ```bash
 uv run inv teardown
 ```
+
+## Only running locally
+
+If you are only testing local execution, then you do not need argo. To just setup the
+Metaflow on Modal sandboxes:
+
+```bash
+uv run inv start-metaflow
+```

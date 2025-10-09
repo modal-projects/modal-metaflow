@@ -83,7 +83,7 @@ def stop_argo(ctx):
 
 
 @task
-def start(
+def develop(
     ctx,
     timeout: int = DEFAULT_TIMEOUT,
     app_name: str = DEFAULT_APP_NAME,
@@ -96,6 +96,6 @@ def start(
 
 
 @task
-def stop(ctx):
+def teardown(ctx):
     stop_metaflow(ctx)
     stop_argo(ctx)

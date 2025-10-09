@@ -14,6 +14,8 @@ import time
 K8S_NAMESPACE = "argo"
 ARGO_WORKFLOWS_VERSION = "v3.7.2"
 CLUSTER_NAME = "metaflow-argo"
+S3_SECRET_NAME = "s3-credentials"
+MODAL_SECRET_NAME = "modal-argo-creds"
 
 
 class Minio(NamedTuple):
@@ -355,8 +357,9 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
         "METAFLOW_DEFAULT_METADATA": "service",
         "METAFLOW_SERVICE_URL": mf_service.metadata_service.url,
         "METAFLOW_SERVICE_INTERNAL_URL": mf_service.metadata_service.url,
-        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
+        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_SECRET_NAME}",
         "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
+        "METAFLOW_S3_ENDPOINT_URL": mf_service.minio.endpoint,
     }
     sandbox_ids = [
         mf_service.minio.sandbox.object_id,
@@ -369,7 +372,7 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
         sandbox_ids.append(mf_service.ui.sandbox.object_id)
 
     modal_metaflow_path = mf_home / "config_modal.json"
-    modal_metaflow_path.write_text(json.dumps(mf_config))
+    modal_metaflow_path.write_text(json.dumps(mf_config, indent=4))
 
     sandbox_ids_path = mf_home / "sandbox_ids.json"
     sandbox_ids_path.write_text(json.dumps(sandbox_ids))
@@ -394,7 +397,8 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
     aws_dot_content = dedent(f"""\
     AWS_ACCESS_KEY_ID={mf_service.minio.key}
     AWS_SECRET_ACCESS_KEY={mf_service.minio.secret}
-    AWS_DEFAULT_REGION=us-us-east-1""")
+    AWS_DEFAULT_REGION=us-east-1
+    AWS_ENDPOINT_URL_S3={mf_service.minio.endpoint}""")
     aws_dot_file.write_text(aws_dot_content)
 
     return source_path
@@ -495,6 +499,20 @@ def check_namespace_exists(kubectl: str, namespace: str) -> bool:
     return False
 
 
+def check_if_secret_exists(kubectl: str, secret_name: str, namespace: str) -> bool:
+    result = run(
+        [kubectl, "-n", namespace, "get", "secret", "--output", "json"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    result_list = json.loads(result.stdout)
+    for item in result_list["items"]:
+        if item["metadata"]["name"] == secret_name:
+            return True
+    return False
+
+
 def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret: str):
     k3d, kubectl = _check_k3d_kube()
 
@@ -505,31 +523,38 @@ def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret
         run([kubectl, "create", "namespace", K8S_NAMESPACE], check=True)
 
     aws_dot_file = str((mf_home / "aws_creds.env").absolute())
-    run(
-        [
-            kubectl,
-            "create",
-            "secret",
-            "generic",
-            "s3-credentials",
-            "--from-env-file",
-            aws_dot_file,
-        ],
-        check=True,
-    )
 
-    run(
-        [
-            kubectl,
-            "create",
-            "secret",
-            "generic",
-            "modal-argo-creds",
-            f"--from-literal=MODAL_TOKEN_ID={modal_token_id}",
-            f"--from-literal=MODAL_TOKEN_SECRET={modal_token_secret}",
-        ],
-        check=True,
-    )
+    if not check_if_secret_exists(kubectl, S3_SECRET_NAME, K8S_NAMESPACE):
+        run(
+            [
+                kubectl,
+                "-n",
+                K8S_NAMESPACE,
+                "create",
+                "secret",
+                "generic",
+                S3_SECRET_NAME,
+                "--from-env-file",
+                aws_dot_file,
+            ],
+            check=True,
+        )
+
+    if not check_if_secret_exists(kubectl, MODAL_SECRET_NAME, K8S_NAMESPACE):
+        run(
+            [
+                kubectl,
+                "-n",
+                K8S_NAMESPACE,
+                "create",
+                "secret",
+                "generic",
+                MODAL_SECRET_NAME,
+                f"--from-literal=MODAL_TOKEN_ID={modal_token_id}",
+                f"--from-literal=MODAL_TOKEN_SECRET={modal_token_secret}",
+            ],
+            check=True,
+        )
 
     run(
         [
