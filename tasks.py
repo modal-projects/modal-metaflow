@@ -3,6 +3,9 @@ from invoke.tasks import task
 from tests.services import create_metaflow_sandboxes, write_config, terminate_sandboxes
 from textwrap import dedent
 
+project_root = Path(__file__).parent
+modal_mf_home = (project_root / ".modal_metaflow").absolute()
+
 
 @task
 def start_metaflow(
@@ -15,8 +18,6 @@ def start_metaflow(
     metaflow_service = create_metaflow_sandboxes(
         app_name, timeout=timeout, include_ui=include_ui
     )
-
-    modal_mf_home = Path(".modal_metaflow").absolute()
     source_file = write_config(modal_mf_home, metaflow_service).absolute()
 
     ui_context = ""
