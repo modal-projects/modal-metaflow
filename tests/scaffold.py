@@ -401,8 +401,7 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
     aws_dot_content = dedent(f"""\
     AWS_ACCESS_KEY_ID={mf_service.minio.key}
     AWS_SECRET_ACCESS_KEY={mf_service.minio.secret}
-    AWS_DEFAULT_REGION=us-east-1
-    AWS_ENDPOINT_URL_S3={mf_service.minio.endpoint}""")
+    AWS_DEFAULT_REGION=us-east-1""")
     aws_dot_file.write_text(aws_dot_content)
 
     return source_path
