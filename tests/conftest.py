@@ -11,7 +11,7 @@ def flows_path() -> Path:
 
 @pytest.fixture(scope="session")
 def app_name() -> str:
-    return "metaflow-test"
+    return "modal-metaflow-ci-test"
 
 
 @pytest.fixture(scope="session")
