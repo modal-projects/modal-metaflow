@@ -2,21 +2,22 @@
 
 0. Install [k3d](https://k3d.io/v5.6.3/) and `kubectl`.
 1. Create a [service token](https://modal.com/docs/guide/service-users) and make sure `MODAL_METAFLOW_TOKEN_ID` and `MODAL_METAFLOW_TOKEN_SECRET` are set in your environment.
-2. Build the modal-metaflow wheel and install locally. This enables metaflow to discover the plugin and upload it to argo.
+
+2. Activate the venv:
 
 ```bash
-rm -rf dist && uv build --wheel && uv pip install $(find dist -name '*.whl')
-```
-
-When you add a new dependency with `uv add ...`, you'll need to run the above again.
-
-3. Activate the venv:
-
-```bash
+uv sync --dev
 source .venv/bin/activate
 ```
 
-3. Start Metaflow on Modal and Argo locally:
+3. Build the modal-metaflow wheel and install locally. This enables metaflow to discover the plugin and upload it to argo.
+
+```bash
+inv wheel
+```
+When you add a new dependency with `uv add ...`, you'll need to run the above again.
+
+4. Start Metaflow on Modal and Argo locally:
 
 ```bash
 inv develop

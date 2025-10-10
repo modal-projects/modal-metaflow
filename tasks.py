@@ -1,6 +1,8 @@
+from glob import glob
 import os
 from pathlib import Path
 from invoke import task
+from tempfile import TemporaryDirectory
 from tests.scaffold import (
     create_metaflow_modal_resources,
     write_config,
@@ -15,6 +17,7 @@ from textwrap import dedent
 
 project_root = Path(__file__).parent
 modal_mf_home = (project_root / ".modal_metaflow").absolute()
+os.chdir(project_root)
 
 
 @task
@@ -99,3 +102,12 @@ def develop(
 def teardown(ctx):
     stop_metaflow(ctx)
     stop_argo(ctx)
+
+
+@task
+def wheel(ctx):
+    with TemporaryDirectory() as wheel_dir:
+        ctx.run(f"uv build -o {wheel_dir} --wheel")
+        wheel_name = glob("*.whl", root_dir=wheel_dir)[0]
+        wheel_abs_path = os.path.join(wheel_dir, wheel_name)
+        ctx.run(f"uv pip install {wheel_abs_path}")

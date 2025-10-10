@@ -41,13 +41,5 @@ jobs:
         run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
 
       - name: Install modal_metaflow as a package
-        run: uv build --wheel && uv pip install $(find dist -name "*.whl")
-
-      - name: Look at environment
-        run:
-          which python
-          which k3d
-          which kubectl
-
-
+        run: inv wheel
 
