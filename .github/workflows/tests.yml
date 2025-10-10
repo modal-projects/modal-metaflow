@@ -3,7 +3,6 @@ name: Tests
 on:
   push:
     branches:
-      - thomasjpfan/ci-testing
       - main
   pull_request:
 
