@@ -1,7 +1,7 @@
 # Development
 
 0. Install [k3d](https://k3d.io/v5.6.3/) and `kubectl`.
-1. Create a [service token](https://modal.com/docs/guide/service-users) and make sure `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` are set in your environment.
+1. Create a [service token](https://modal.com/docs/guide/service-users) and make sure `MODAL_METAFLOW_TOKEN_ID` and `MODAL_METAFLOW_TOKEN_SECRET` are set in your environment.
 2. Start Metaflow on Modal and Argo locally:
 
 ```bash

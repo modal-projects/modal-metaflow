@@ -56,11 +56,11 @@ def stop_metaflow(ctx):
 def start_argo(ctx):
     print("Starting argo workflows!")
     try:
-        modal_token_id = os.environ["MODAL_TOKEN_ID"]
-        modal_token_secret = os.environ["MODAL_TOKEN_SECRET"]
+        modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
+        modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
     except KeyError:
         raise RuntimeError(
-            "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET must be set locally. "
+            "MODAL_METAFLOW_TOKEN_ID and MODAL_METAFLOW_TOKEN_SECRET must be set locally. "
             "They are used by argo to authenticate with Modal."
         )
 
