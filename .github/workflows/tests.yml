@@ -34,8 +34,14 @@ jobs:
       - name: Install project
         run: uv sync --locked --all-extras --dev
 
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.8.3 bash
+
       - name: Get python
-        run: which python
+        run: |
+          which python
+          which k3d
+          which kubectl
 
 
 
