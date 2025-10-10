@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+env:
+  K3D_VERSION: "v5.8.3"
+
 jobs:
   integration:
     name: Integration tests
@@ -35,10 +38,13 @@ jobs:
         run: uv sync --locked --all-extras --dev
 
       - name: Install k3d
-        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.8.3 bash
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=$K3D_VERSION bash
 
-      - name: Get python
-        run: |
+      - name: Install modal_metaflow as a package
+        run: uv build --wheel && uv pip install $(find dist -name "*.whl")
+
+      - name: Look at environment
+        run:
           which python
           which k3d
           which kubectl
