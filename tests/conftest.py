@@ -28,6 +28,13 @@ def pytest_addoption(parser):
         help="Keep modal sandboxes alive",
     )
 
+    parser.addoption(
+        "--sandbox-timeout",
+        action="store",
+        default=None,
+        help="Timeout for modal sandboxes",
+    )
+
 
 @pytest.fixture(scope="session")
 def keep_alive(request):
@@ -36,8 +43,16 @@ def keep_alive(request):
 
 
 @pytest.fixture(scope="session")
-def mf_service(app_name, metaflow_home_path, keep_alive):
-    mf_service = create_metaflow_modal_resources(app_name, include_ui=False)
+def sandbox_timeout(request):
+    """A fixture that returns the value of the --keep-alive command-line option."""
+    return request.config.getoption("--sandbox-timeout")
+
+
+@pytest.fixture(scope="session")
+def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
+    mf_service = create_metaflow_modal_resources(
+        app_name, include_ui=False, timeout=sandbox_timeout
+    )
     write_config(metaflow_home_path, mf_service)
 
     yield mf_service
