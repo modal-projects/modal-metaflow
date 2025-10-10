@@ -16,6 +16,9 @@ ARGO_WORKFLOWS_VERSION = "v3.7.2"
 CLUSTER_NAME = "metaflow-argo"
 S3_SECRET_NAME = "s3-credentials"
 MODAL_SECRET_NAME = "modal-argo-creds"
+DEFAULT_TIMEOUT = 60 * 60 * 6
+DEFAULT_APP_NAME = "metaflow-test"
+DEFAULT_INCLUDE_UI = True
 
 # TODO: This should be configurable
 METAFLOW_DEFAULT_CONTAINER_IMAGE = "ghcr.io/thomasjpfan/modal-client:0.0.3"
@@ -439,7 +442,9 @@ def terminate_sandboxes(mf_home: Path):
 
 
 def create_metaflow_sandboxes(
-    app_name: str, timeout: int, include_ui: bool
+    app_name: str = DEFAULT_APP_NAME,
+    timeout: int = DEFAULT_TIMEOUT,
+    include_ui: bool = DEFAULT_INCLUDE_UI,
 ) -> MetaflowService:
     app = modal.App.lookup(app_name, create_if_missing=True)
 

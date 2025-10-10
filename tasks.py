@@ -7,14 +7,14 @@ from tests.scaffold import (
     terminate_sandboxes,
     stop_argo_kubernetes,
     start_argo_kubernetes,
+    DEFAULT_TIMEOUT,
+    DEFAULT_APP_NAME,
+    DEFAULT_INCLUDE_UI,
 )
 from textwrap import dedent
 
 project_root = Path(__file__).parent
 modal_mf_home = (project_root / ".modal_metaflow").absolute()
-DEFAULT_TIMEOUT = 60 * 60 * 6
-DEFAULT_APP_NAME = "metaflow-test"
-DEFAULT_INCLUDE_UI = True
 
 
 @task
