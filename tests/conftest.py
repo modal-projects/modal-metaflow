@@ -57,6 +57,7 @@ def mf_service(app_name, metaflow_home_path, keep_alive):
 
 @pytest.fixture(autouse=True)
 def configure_env(mf_service, monkeypatch, metaflow_home_path):
+    """Configure environment variables for metaflow."""
     monkeypatch.setenv("METAFLOW_HOME", str(metaflow_home_path))
     monkeypatch.setenv("METAFLOW_PROFILE", "modal")
 
