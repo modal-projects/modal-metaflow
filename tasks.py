@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from invoke import task
 from tests.scaffold import (
-    create_metaflow_sandboxes,
+    create_metaflow_modal_resources,
     write_config,
     terminate_sandboxes,
     stop_argo_kubernetes,
@@ -25,7 +25,7 @@ def start_metaflow(
     include_ui: bool = DEFAULT_INCLUDE_UI,
 ) -> str:
     print("Starting metaflow services on Modal")
-    metaflow_service = create_metaflow_sandboxes(
+    metaflow_service = create_metaflow_modal_resources(
         app_name, timeout=timeout, include_ui=include_ui
     )
     source_file = write_config(modal_mf_home, metaflow_service).absolute()

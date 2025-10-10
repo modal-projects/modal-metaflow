@@ -7,7 +7,10 @@ authors = [
     { name = "Jason Mancuso", email = "7891333+jvmncs@users.noreply.github.com" },
 ]
 requires-python = ">=3.11"
-dependencies = ["modal", "metaflow"]
+dependencies = [
+    "modal==1.2.0",
+    "metaflow",
+]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -30,4 +33,5 @@ dev = [
     "kubernetes>=34.1.0",
     "psycopg[binary]>=3.2.10",
     "pytest>=8.4.2",
+    "pytest-timeout>=2.4.0",
 ]

@@ -5,6 +5,7 @@ from textwrap import dedent
 from pathlib import Path
 from typing import Optional
 import urllib.request
+import modal.config
 import psycopg
 from contextlib import suppress
 import modal
@@ -15,9 +16,12 @@ K8S_NAMESPACE = "argo"
 ARGO_WORKFLOWS_VERSION = "v3.7.2"
 CLUSTER_NAME = "metaflow-argo"
 S3_SECRET_NAME = "s3-credentials"
-MODAL_SECRET_NAME = "modal-argo-creds"
+MODAL_ARGO_SECRET_NAME = "modal-argo-creds"
+MODAL_S3_SECRET_NAME = "s3-secret-metaflow-test"
+
 DEFAULT_TIMEOUT = 60 * 60 * 6
 DEFAULT_APP_NAME = "metaflow-test"
+
 DEFAULT_INCLUDE_UI = True
 
 # TODO: This should be configurable
@@ -352,7 +356,7 @@ def construct_env(mf_service: MetaflowService) -> dict:
         "METAFLOW_DEFAULT_METADATA": "service",
         "METAFLOW_SERVICE_URL": mf_service.metadata_service.url,
         "METAFLOW_SERVICE_INTERNAL_URL": mf_service.metadata_service.url,
-        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_SECRET_NAME}",
+        "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": f"{S3_SECRET_NAME},{MODAL_ARGO_SECRET_NAME}",
         "METAFLOW_KUBERNETES_NAMESPACE": K8S_NAMESPACE,
         "METAFLOW_S3_ENDPOINT_URL": mf_service.minio.endpoint,
         "METAFLOW_DEFAULT_CONTAINER_IMAGE": METAFLOW_DEFAULT_CONTAINER_IMAGE,
@@ -399,7 +403,7 @@ def write_config(mf_home: Path, mf_service: MetaflowService):
     export METAFLOW_PROFILE="modal"
     export AWS_CONFIG_FILE="{s3_config_}"
 
-    deactivate () {{
+    deactivate_modal_metaflow () {{
         unset METAFLOW_HOME
         unset METAFLOW_PROFILE
         unset AWS_CONFIG_FILE
@@ -441,7 +445,19 @@ def terminate_sandboxes(mf_home: Path):
         path.unlink(missing_ok=True)
 
 
-def create_metaflow_sandboxes(
+def create_modal_s3_secret(name: str, minio: Minio):
+    modal.Secret.objects.create(
+        name,
+        {
+            "AWS_ACCESS_KEY_ID": minio.key,
+            "AWS_SECRET_ACCESS_KEY": minio.secret,
+            "AWS_DEFAULT_REGION": "us-east-1",
+        },
+        allow_existing=True,
+    )
+
+
+def create_metaflow_modal_resources(
     app_name: str = DEFAULT_APP_NAME,
     timeout: int = DEFAULT_TIMEOUT,
     include_ui: bool = DEFAULT_INCLUDE_UI,
@@ -468,6 +484,8 @@ def create_metaflow_sandboxes(
         )
     else:
         ui = None
+
+    create_modal_s3_secret(MODAL_S3_SECRET_NAME, minio)
 
     return MetaflowService(
         minio=minio, psql=psql, metadata_service=metadata_service, ui=ui
@@ -538,6 +556,7 @@ def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret
         run([kubectl, "create", "namespace", K8S_NAMESPACE], check=True)
 
     aws_dot_file = str((mf_home / "aws_creds.env").absolute())
+    modal_environment = modal.config.config["environment"]
 
     if not check_if_secret_exists(kubectl, S3_SECRET_NAME, K8S_NAMESPACE):
         run(
@@ -555,7 +574,7 @@ def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret
             check=True,
         )
 
-    if not check_if_secret_exists(kubectl, MODAL_SECRET_NAME, K8S_NAMESPACE):
+    if not check_if_secret_exists(kubectl, MODAL_ARGO_SECRET_NAME, K8S_NAMESPACE):
         run(
             [
                 kubectl,
@@ -564,9 +583,10 @@ def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret
                 "create",
                 "secret",
                 "generic",
-                MODAL_SECRET_NAME,
+                MODAL_ARGO_SECRET_NAME,
                 f"--from-literal=MODAL_TOKEN_ID={modal_token_id}",
                 f"--from-literal=MODAL_TOKEN_SECRET={modal_token_secret}",
+                f"--from-literal=MODAL_ENVIRONMENT={modal_environment}",
             ],
             check=True,
         )

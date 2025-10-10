@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from tests.scaffold import create_metaflow_sandboxes, write_config
+from tests.scaffold import create_metaflow_modal_resources, write_config
 from os import getenv
 
 
@@ -37,7 +37,7 @@ def keep_alive(request):
 
 @pytest.fixture(scope="session")
 def mf_service(app_name, metaflow_home_path, keep_alive):
-    mf_service = create_metaflow_sandboxes(app_name, include_ui=False)
+    mf_service = create_metaflow_modal_resources(app_name, include_ui=False)
     write_config(metaflow_home_path, mf_service)
 
     yield mf_service
