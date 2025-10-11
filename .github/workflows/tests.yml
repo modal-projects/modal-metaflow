@@ -46,7 +46,7 @@ jobs:
 
       - name: Run tests
         run:
-          pytest tests --sandbox-timeout 1800 -n 2 --app-name modal-metaflow-ci-test
+          pytest tests --sandbox-timeout 1800 --app-name modal-metaflow-ci-test
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
