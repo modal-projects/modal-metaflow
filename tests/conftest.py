@@ -1,17 +1,18 @@
+import os
 import pytest
 from pathlib import Path
-from tests.scaffold import create_metaflow_modal_resources, write_config
-from os import getenv
+from tests.scaffold import (
+    create_metaflow_modal_resources,
+    stop_argo_kubernetes,
+    write_config,
+    start_argo_kubernetes,
+    DEFAULT_TIMEOUT,
+)
 
 
 @pytest.fixture(scope="session")
 def flows_path() -> Path:
     return (Path(__file__).parent / "flows").resolve()
-
-
-@pytest.fixture(scope="session")
-def app_name() -> str:
-    return "metaflow-test"
 
 
 @pytest.fixture(scope="session")
@@ -31,8 +32,16 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sandbox-timeout",
         action="store",
-        default=None,
+        default=DEFAULT_TIMEOUT,
+        type=int,
         help="Timeout for modal sandboxes",
+    )
+
+    parser.addoption(
+        "--app-name",
+        action="store",
+        default="metaflow-test",
+        help="App name to run tests",
     )
 
 
@@ -49,11 +58,36 @@ def sandbox_timeout(request):
 
 
 @pytest.fixture(scope="session")
+def app_name(request):
+    """A fixture that returns the value of the --keep-alive command-line option."""
+    return request.config.getoption("--app-name")
+
+
+@pytest.fixture(scope="session")
 def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
     mf_service = create_metaflow_modal_resources(
         app_name, include_ui=False, timeout=sandbox_timeout
     )
     write_config(metaflow_home_path, mf_service)
+
+    # TODO: Argo workflow tests are timing out in github actions
+    in_github_action = os.getenv("GITHUB_RUN_ID")
+
+    if in_github_action:
+        try:
+            modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
+            modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
+        except KeyError:
+            raise RuntimeError(
+                "MODAL_METAFLOW_TOKEN_ID and MODAL_METAFLOW_TOKEN_SECRET must be set locally. "
+                "They are used by argo to authenticate with Modal."
+            )
+
+        start_argo_kubernetes(
+            metaflow_home_path,
+            modal_token_id=modal_token_id,
+            modal_token_secret=modal_token_secret,
+        )
 
     yield mf_service
 
@@ -68,6 +102,9 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
 
     for sandbox in sandboxes:
         sandbox.terminate()
+
+    if in_github_action:
+        stop_argo_kubernetes()
 
 
 @pytest.fixture(autouse=True)
