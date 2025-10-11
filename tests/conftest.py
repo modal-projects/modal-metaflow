@@ -1,7 +1,12 @@
+import os
 import pytest
 from pathlib import Path
-from tests.scaffold import create_metaflow_modal_resources, write_config
-from os import getenv
+from tests.scaffold import (
+    create_metaflow_modal_resources,
+    stop_argo_kubernetes,
+    write_config,
+    start_argo_kubernetes,
+)
 
 
 @pytest.fixture(scope="session")
@@ -64,6 +69,21 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
     )
     write_config(metaflow_home_path, mf_service)
 
+    try:
+        modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
+        modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
+    except KeyError:
+        raise RuntimeError(
+            "MODAL_METAFLOW_TOKEN_ID and MODAL_METAFLOW_TOKEN_SECRET must be set locally. "
+            "They are used by argo to authenticate with Modal."
+        )
+
+    start_argo_kubernetes(
+        metaflow_home_path,
+        modal_token_id=modal_token_id,
+        modal_token_secret=modal_token_secret,
+    )
+
     yield mf_service
 
     if keep_alive:
@@ -77,6 +97,8 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
 
     for sandbox in sandboxes:
         sandbox.terminate()
+
+    stop_argo_kubernetes()
 
 
 @pytest.fixture(autouse=True)
