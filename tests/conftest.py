@@ -6,6 +6,7 @@ from tests.scaffold import (
     stop_argo_kubernetes,
     write_config,
     start_argo_kubernetes,
+    DEFAULT_TIMEOUT,
 )
 
 
@@ -31,7 +32,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sandbox-timeout",
         action="store",
-        default=None,
+        default=DEFAULT_TIMEOUT,
         type=int,
         help="Timeout for modal sandboxes",
     )
@@ -69,20 +70,24 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
     )
     write_config(metaflow_home_path, mf_service)
 
-    try:
-        modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
-        modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
-    except KeyError:
-        raise RuntimeError(
-            "MODAL_METAFLOW_TOKEN_ID and MODAL_METAFLOW_TOKEN_SECRET must be set locally. "
-            "They are used by argo to authenticate with Modal."
-        )
+    # TODO: Argo workflow tests are timing out in github actions
+    in_github_action = os.getenv("GITHUB_RUN_ID")
 
-    start_argo_kubernetes(
-        metaflow_home_path,
-        modal_token_id=modal_token_id,
-        modal_token_secret=modal_token_secret,
-    )
+    if in_github_action:
+        try:
+            modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
+            modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
+        except KeyError:
+            raise RuntimeError(
+                "MODAL_METAFLOW_TOKEN_ID and MODAL_METAFLOW_TOKEN_SECRET must be set locally. "
+                "They are used by argo to authenticate with Modal."
+            )
+
+        start_argo_kubernetes(
+            metaflow_home_path,
+            modal_token_id=modal_token_id,
+            modal_token_secret=modal_token_secret,
+        )
 
     yield mf_service
 
@@ -98,7 +103,8 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
     for sandbox in sandboxes:
         sandbox.terminate()
 
-    stop_argo_kubernetes()
+    if in_github_action:
+        stop_argo_kubernetes()
 
 
 @pytest.fixture(autouse=True)
