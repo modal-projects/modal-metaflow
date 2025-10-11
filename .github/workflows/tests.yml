@@ -14,6 +14,7 @@ concurrency:
 
 env:
   K3D_VERSION: "v5.8.3"
+  MODAL_ENVIRONMENT: thomas-dev
 
 jobs:
   integration:
@@ -46,3 +47,8 @@ jobs:
       - name: Run tests
         run:
           pytest tests --sandbox-timeout 30
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_METAFLOW_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_METAFLOW_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_ID }}
