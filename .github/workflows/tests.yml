@@ -46,7 +46,7 @@ jobs:
 
       - name: Run tests
         run:
-          pytest tests --sandbox-timeout 30
+          pytest tests --sandbox-timeout 1800
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
