@@ -49,6 +49,6 @@ jobs:
           pytest tests --sandbox-timeout 30
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
           MODAL_METAFLOW_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_METAFLOW_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_METAFLOW_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
