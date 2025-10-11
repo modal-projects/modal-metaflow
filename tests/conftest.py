@@ -32,6 +32,7 @@ def pytest_addoption(parser):
         "--sandbox-timeout",
         action="store",
         default=None,
+        type=int,
         help="Timeout for modal sandboxes",
     )
 
