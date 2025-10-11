@@ -10,11 +10,6 @@ def flows_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def app_name() -> str:
-    return "modal-metaflow-ci-test"
-
-
-@pytest.fixture(scope="session")
 def metaflow_home_path(tmp_path_factory) -> Path:
     mf_home = tmp_path_factory.mktemp(".modal_metaflow")
     return mf_home
@@ -36,6 +31,13 @@ def pytest_addoption(parser):
         help="Timeout for modal sandboxes",
     )
 
+    parser.addoption(
+        "--app-name",
+        action="store",
+        default="metaflow-test",
+        help="App name to run tests",
+    )
+
 
 @pytest.fixture(scope="session")
 def keep_alive(request):
@@ -47,6 +49,12 @@ def keep_alive(request):
 def sandbox_timeout(request):
     """A fixture that returns the value of the --keep-alive command-line option."""
     return request.config.getoption("--sandbox-timeout")
+
+
+@pytest.fixture(scope="session")
+def app_name(request):
+    """A fixture that returns the value of the --keep-alive command-line option."""
+    return request.config.getoption("--app-name")
 
 
 @pytest.fixture(scope="session")
