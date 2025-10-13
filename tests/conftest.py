@@ -82,8 +82,7 @@ def pytest_collection_modifyitems(config, items):
     if no_argo:
         for item in items:
             if "argo" in item.name:
-                continue
-            item.add_marker(skip_argo)
+                item.add_marker(skip_argo)
 
 
 @pytest.fixture(scope="session")
