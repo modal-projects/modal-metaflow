@@ -55,8 +55,6 @@ inv start-metaflow
 
 ## Running pytest
 
-For local testing, it's best to keep the Modal sandboxes up for faster iteration with `--keep-alive`:
-
 ```bash
-pytest tests/basic_flow_test.py --keep-alive
+pytest tests/basic_flow_test.py::test_hello_world_runner
 ```

@@ -23,7 +23,7 @@ def metaflow_home_path(tmp_path_factory) -> Path:
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--keep-alive",
+        "--teardown",
         action="store_true",
         default=False,
         help="Keep modal sandboxes alive",
@@ -53,9 +53,9 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
-def keep_alive(request):
+def teardown(request):
     """A fixture that returns the value of the --keep-alive command-line option."""
-    return request.config.getoption("--keep-alive")
+    return request.config.getoption("--teardown")
 
 
 @pytest.fixture(scope="session")
@@ -86,9 +86,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(scope="session")
-def mf_service(
-    request, app_name, metaflow_home_path, keep_alive, sandbox_timeout, no_argo
-):
+def mf_service(app_name, metaflow_home_path, teardown, sandbox_timeout, no_argo):
     mf_service = create_metaflow_modal_resources(
         app_name, include_ui=False, timeout=sandbox_timeout
     )
@@ -112,7 +110,7 @@ def mf_service(
 
     yield mf_service
 
-    if keep_alive:
+    if not teardown:
         return
 
     sandboxes = [
