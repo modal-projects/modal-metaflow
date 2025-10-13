@@ -44,6 +44,13 @@ def pytest_addoption(parser):
         help="App name to run tests",
     )
 
+    parser.addoption(
+        "--no-argo",
+        action="store_true",
+        default=False,
+        help="Run argo tests",
+    )
+
 
 @pytest.fixture(scope="session")
 def keep_alive(request):
@@ -53,27 +60,42 @@ def keep_alive(request):
 
 @pytest.fixture(scope="session")
 def sandbox_timeout(request):
-    """A fixture that returns the value of the --keep-alive command-line option."""
+    """A fixture that returns the value of the --sandbox-timeout command-line option."""
     return request.config.getoption("--sandbox-timeout")
 
 
 @pytest.fixture(scope="session")
 def app_name(request):
-    """A fixture that returns the value of the --keep-alive command-line option."""
+    """A fixture that returns the value of the --app-name command-line option."""
     return request.config.getoption("--app-name")
 
 
 @pytest.fixture(scope="session")
-def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
+def no_argo(request):
+    """A fixture that returns the value of the --no-argo command-line option."""
+    return request.config.getoption("--no-argo")
+
+
+def pytest_collection_modifyitems(config, items):
+    no_argo = config.getoption("--no-argo")
+    skip_argo = pytest.mark.skip(reason="test is enabled with -no-argo")
+    if no_argo:
+        for item in items:
+            if "argo" in item.name:
+                continue
+            item.add_marker(skip_argo)
+
+
+@pytest.fixture(scope="session")
+def mf_service(
+    request, app_name, metaflow_home_path, keep_alive, sandbox_timeout, no_argo
+):
     mf_service = create_metaflow_modal_resources(
         app_name, include_ui=False, timeout=sandbox_timeout
     )
     write_config(metaflow_home_path, mf_service)
 
-    # TODO: Argo workflow tests are timing out in github actions
-    in_github_action = os.getenv("GITHUB_RUN_ID")
-
-    if in_github_action:
+    if not no_argo:
         try:
             modal_token_id = os.environ["MODAL_METAFLOW_TOKEN_ID"]
             modal_token_secret = os.environ["MODAL_METAFLOW_TOKEN_SECRET"]
@@ -103,7 +125,7 @@ def mf_service(app_name, metaflow_home_path, keep_alive, sandbox_timeout):
     for sandbox in sandboxes:
         sandbox.terminate()
 
-    if in_github_action:
+    if not no_argo:
         stop_argo_kubernetes()
 
 

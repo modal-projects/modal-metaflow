@@ -7,10 +7,7 @@ authors = [
     { name = "Jason Mancuso", email = "7891333+jvmncs@users.noreply.github.com" },
 ]
 requires-python = ">=3.11"
-dependencies = [
-    "modal==1.2.0",
-    "metaflow",
-]
+dependencies = ["modal==1.2.0", "metaflow"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
