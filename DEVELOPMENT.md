@@ -56,5 +56,5 @@ inv start-metaflow
 ## Running pytest
 
 ```bash
-pytest tests/basic_flow_test.py::test_hello_world_runner
+pytest tests/flows_test.py::test_hello_world_runner
 ```
