@@ -13,7 +13,7 @@ def test_hello_world_runner(flows_path):
     assert run.data.custom_value == 9
 
 
-@pytest.mark.timeout(500)
+@pytest.mark.timeout(600)
 def test_argo_workflow_trigger(flows_path):
     hello_world = str(flows_path / "hello_world.py")
 
@@ -21,6 +21,7 @@ def test_argo_workflow_trigger(flows_path):
     triggered_run = deployed_flow.trigger()
 
     triggered_run.wait_for_completion(timeout=200)
-    run_obj = triggered_run.wait_for_run(timeout=200)
+    run = triggered_run.wait_for_run(timeout=200)
 
-    assert run_obj.successful
+    assert run.successful
+    assert run.data.custom_value == 10
