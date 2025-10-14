@@ -14,6 +14,10 @@ async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -
 
 @pytest.mark.timeout(300)
 def test_hello_world_runner(flows_path):
+    import os
+
+    print("XXX", os.getenv("METAFLOW_HOME"))
+    print("XXX", os.getenv("METAFLOW_PROFILE"))
     hello_world = str(flows_path / "hello_world.py")
 
     run = asyncio.run(run_flow(hello_world, 300, run_kwargs={"my_value": 4}))
