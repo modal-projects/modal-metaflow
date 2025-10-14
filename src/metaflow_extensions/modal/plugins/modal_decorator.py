@@ -44,7 +44,6 @@ def _sanitize_modal_app_name(flow_name: str, run_id: str, step_name: str) -> str
     clean_run_id = run_id.replace(".", "-")
 
     # Create base name
-    print("FLOW NAME", flow_name, "CLEAN", clean_flow_name)
     base_name = f"{clean_flow_name}-{clean_run_id}-{step_name}"
 
     # If too long, truncate and add hash suffix for uniqueness
@@ -94,7 +93,7 @@ def _get_or_create_modal_app(
             print(f"[Modal Worker Debug] FULL step_cli: {step_cli}")
 
             # Debug: Log what metadata configuration Modal worker receives
-            print(f"[Modal Worker Debug] Environment variables received:")
+            print("[Modal Worker Debug] Environment variables received:")
             print(
                 f"[Modal Worker Debug] METAFLOW_DEFAULT_METADATA: {env_vars.get('METAFLOW_DEFAULT_METADATA')}"
             )
@@ -111,7 +110,7 @@ def _get_or_create_modal_app(
                     os.environ.update(env_vars)
 
                 # Debug: Verify environment variables are set
-                print(f"[Modal Worker Debug] After setting env vars:")
+                print("[Modal Worker Debug] After setting env vars:")
                 print(
                     f"[Modal Worker Debug] os.environ METAFLOW_DEFAULT_METADATA: {os.environ.get('METAFLOW_DEFAULT_METADATA')}"
                 )
@@ -124,7 +123,6 @@ def _get_or_create_modal_app(
                     executable="/bin/bash",  # Force bash for bash-specific syntax
                     capture_output=True,
                 )
-                print("[Modal Worker Debug] PYCHECK OUTPUT", pycheck.stdout)
 
                 completed = subprocess.run(
                     step_cli,
@@ -149,9 +147,6 @@ def _get_or_create_modal_app(
                 return 1, "", err
 
         # Deploy the app
-        print("WHERE AM I")
-        dirres = subprocess.run("ls -lh /metaflow", shell=True, capture_output=True)
-        print("[Modal Debug]", dirres.stdout.decode())
         if modal_environment:
             # TODO
             os.environ["MODAL_ENVIRONMENT"] = modal_environment
@@ -596,7 +591,7 @@ class ModalDecorator(StepDecorator):
         from metaflow import get_namespace
         from metaflow.util import get_username, resolve_identity
 
-        print(f"[Modal Debug] task_pre_step in Argo pod:")
+        print("[Modal Debug] task_pre_step in Argo pod:")
         print(
             f"[Modal Debug] METAFLOW_DEFAULT_METADATA: {os.environ.get('METAFLOW_DEFAULT_METADATA')}"
         )

@@ -264,7 +264,6 @@ def step(
     )
 
     try:
-        print("THERE'S JUST NO WAY", modal_app_name)
         # Execute the Modal task
         exit_code = _execute_modal_task(
             step_cli=shlex.join(step_cli),
@@ -405,7 +404,6 @@ def _execute_modal_task(
         last_err = None
         for i in range(5):
             try:
-                print("YOOOO WTF", modal_app_name, modal_func_name)
                 func = modal_sdk.Function.from_name(
                     modal_app_name,
                     modal_func_name,
