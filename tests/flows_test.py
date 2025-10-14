@@ -1,6 +1,6 @@
 from typing import Optional
 import asyncio
-from metaflow import Runner, Deployer, Run, namespace()
+from metaflow import Runner, Deployer, Run, namespace
 import pytest
 
 
