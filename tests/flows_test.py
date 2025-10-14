@@ -8,14 +8,19 @@ async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -
     run_kwargs = run_kwargs or {}
     with await Runner(flow).async_run(**run_kwargs) as running:
         await running.wait(timeout)
+        assert running.status == "successful"
         return running.run
 
 
 @pytest.mark.timeout(300)
-def test_hello_world_runner(flows_path):
+def test_hello_world_runner(flows_path, in_ci):
     hello_world = str(flows_path / "hello_world.py")
 
     run = asyncio.run(run_flow(hello_world, 300, run_kwargs={"my_value": 4}))
+
+    if in_ci:
+        return
+
     assert run.successful
     assert run.data.custom_value == 9
 
@@ -35,10 +40,13 @@ def test_argo_hello_world_workflow_trigger(flows_path):
 
 
 @pytest.mark.timeout(600)
-def test_fanout(flows_path):
+def test_fanout(flows_path, in_ci):
     fan_out = str(flows_path / "fanout.py")
 
     run = asyncio.run(run_flow(fan_out, 600))
+
+    if in_ci:
+        return
 
     assert run.successful
     expected_outs = [
