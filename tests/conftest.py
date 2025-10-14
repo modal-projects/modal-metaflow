@@ -51,6 +51,10 @@ def pytest_addoption(parser):
         help="Run argo tests",
     )
 
+    parser.addoption(
+        "--sandbox-suffix", action="store", default="", help="Sandbox prefix on modal"
+    )
+
 
 @pytest.fixture(scope="session")
 def teardown(request):
@@ -76,6 +80,12 @@ def no_argo(request):
     return request.config.getoption("--no-argo")
 
 
+@pytest.fixture(scope="session")
+def sandbox_suffix(request):
+    """A fixture that returns the value of the --sandbox-suffix command-line option."""
+    return request.config.getoption("--sandbox-suffix")
+
+
 def pytest_collection_modifyitems(config, items):
     no_argo = config.getoption("--no-argo")
     skip_argo = pytest.mark.skip(reason="test is enabled with -no-argo")
@@ -86,9 +96,14 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(scope="session")
-def mf_service(app_name, metaflow_home_path, teardown, sandbox_timeout, no_argo):
+def mf_service(
+    app_name, metaflow_home_path, teardown, sandbox_timeout, no_argo, sandbox_suffix
+):
     mf_service = create_metaflow_modal_resources(
-        app_name, include_ui=False, timeout=sandbox_timeout
+        app_name,
+        include_ui=False,
+        timeout=sandbox_timeout,
+        sandbox_name_suffix=sandbox_suffix,
     )
     write_config(metaflow_home_path, mf_service)
 

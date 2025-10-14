@@ -102,12 +102,13 @@ def create_minio_sandbox(
     secret: str,
     timeout: int,
     bucket: str,
+    sandbox_name_suffix: str = "",
 ) -> Minio:
     minio_image = modal.Image.from_registry(
         "minio/minio:RELEASE.2025-09-07T16-13-09Z"
     ).entrypoint([])
 
-    sandbox_name = "metaflow-minio"
+    sandbox_name = f"metaflow-minio{sandbox_name_suffix}"
     try:
         minio_sb = modal.Sandbox.create(
             "minio",
@@ -176,10 +177,11 @@ def create_psql_sandbox(
     password: str,
     db_name: str,
     timeout: int,
+    sandbox_name_suffix: str = "",
 ):
     psql_image = modal.Image.from_registry("postgres:18.0-bookworm")
 
-    sandbox_name = "metaflow-psql"
+    sandbox_name = f"metaflow-psql{sandbox_name_suffix}"
     try:
         psql_sb = modal.Sandbox.create(
             "postgres",
@@ -239,13 +241,17 @@ def is_metadata_service_alive(url):
 
 
 def create_metadata_service_sandbox(
-    app: modal.App, app_name: str, timeout: int, psql: PostgreSQL
+    app: modal.App,
+    app_name: str,
+    timeout: int,
+    psql: PostgreSQL,
+    sandbox_name_suffix: str = "",
 ):
     metadata_service_image = modal.Image.from_registry(
         "netflixoss/metaflow_metadata_service:v2.5.0"
     )
 
-    sandbox_name = "metaflow-metadata-service"
+    sandbox_name = f"metaflow-metadata-service{sandbox_name_suffix}"
     try:
         metadata_service_sb = modal.Sandbox.create(
             "/opt/latest/bin/python3",
@@ -294,7 +300,12 @@ def create_metadata_service_sandbox(
 
 
 def create_metaflow_ui_sandbox(
-    app: modal.App, app_name: str, timeout: int, minio: Minio, psql: PostgreSQL
+    app: modal.App,
+    app_name: str,
+    timeout: int,
+    minio: Minio,
+    psql: PostgreSQL,
+    sandbox_name_suffix: str = "",
 ) -> MetaflowUI:
     metaflow_ui_static_url = "https://github.com/Netflix/metaflow-ui/releases/download/v1.3.14/metaflow-ui-v1.3.14.zip"
     metaflow_ui_image = modal.Image.from_registry(
@@ -307,7 +318,7 @@ def create_metaflow_ui_sandbox(
         ]
     )
 
-    sandbox_name = "metaflow-ui"
+    sandbox_name = f"metaflow-ui{sandbox_name_suffix}"
     try:
         metaflow_ui_sb = modal.Sandbox.create(
             "/opt/latest/bin/python3",
@@ -461,6 +472,7 @@ def create_metaflow_modal_resources(
     app_name: str = DEFAULT_APP_NAME,
     timeout: int = DEFAULT_TIMEOUT,
     include_ui: bool = DEFAULT_INCLUDE_UI,
+    sandbox_name_suffix: str = "",
 ) -> MetaflowService:
     app = modal.App.lookup(app_name, create_if_missing=True)
 
@@ -469,18 +481,39 @@ def create_metaflow_modal_resources(
     bucket = "metaflow-test"
 
     minio = create_minio_sandbox(
-        app, app_name, key=user, secret=password, timeout=timeout, bucket=bucket
+        app,
+        app_name,
+        key=user,
+        secret=password,
+        timeout=timeout,
+        bucket=bucket,
+        sandbox_name_suffix=sandbox_name_suffix,
     )
     psql = create_psql_sandbox(
-        app, app_name, user=user, db_name=user, password=password, timeout=timeout
+        app,
+        app_name,
+        user=user,
+        db_name=user,
+        password=password,
+        timeout=timeout,
+        sandbox_name_suffix=sandbox_name_suffix,
     )
     metadata_service = create_metadata_service_sandbox(
-        app, app_name, timeout=timeout, psql=psql
+        app,
+        app_name,
+        timeout=timeout,
+        psql=psql,
+        sandbox_name_suffix=sandbox_name_suffix,
     )
 
     if include_ui:
         ui = create_metaflow_ui_sandbox(
-            app, app_name, timeout=timeout, minio=minio, psql=psql
+            app,
+            app_name,
+            timeout=timeout,
+            minio=minio,
+            psql=psql,
+            sandbox_name_suffix=sandbox_name_suffix,
         )
     else:
         ui = None
