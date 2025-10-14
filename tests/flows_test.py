@@ -8,6 +8,7 @@ async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -
     run_kwargs = run_kwargs or {}
     with await Runner(flow).async_run(**run_kwargs) as running:
         await running.wait(timeout, stream="stdout")
+        print("XXXXX", running.status)
         return running.run
 
 
