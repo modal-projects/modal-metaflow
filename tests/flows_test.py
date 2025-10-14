@@ -16,7 +16,7 @@ def test_hello_world_runner(flows_path):
     hello_world = str(flows_path / "hello_world.py")
 
     run = asyncio.run(run_flow(hello_world, 300, run_kwargs={"my_value": 4}))
-    assert run.successful
+    assert run.successful, vars(run)
     assert run.data.custom_value == 9
 
 
@@ -40,7 +40,7 @@ def test_fanout(flows_path):
 
     run = asyncio.run(run_flow(fan_out, 600))
 
-    assert run.successful
+    assert run.successful, vars(run)
     expected_outs = [
         "Stranger Things processed",
         "House of Cards processed",
