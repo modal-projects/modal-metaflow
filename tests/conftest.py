@@ -101,7 +101,7 @@ def mf_service(
 ):
     mf_service = create_metaflow_modal_resources(
         app_name,
-        include_ui=False,
+        include_ui=True,
         timeout=sandbox_timeout,
         sandbox_name_suffix=sandbox_suffix,
     )
