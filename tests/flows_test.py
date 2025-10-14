@@ -1,21 +1,21 @@
-from time import sleep
-from metaflow import Runner, Deployer
+from typing import Optional
+import asyncio
+from metaflow import Runner, Deployer, Run
 import pytest
 
 
-def _wait_for_run(running):
-    while running.status == "running":
-        sleep(1)
+async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -> Run:
+    run_kwargs = run_kwargs or {}
+    with await Runner(flow).async_run(**run_kwargs) as running:
+        await running.wait(timeout)
+        return running.run
 
 
 @pytest.mark.timeout(300)
 def test_hello_world_runner(flows_path):
     hello_world = str(flows_path / "hello_world.py")
 
-    with Runner(hello_world).run(my_value=4) as running:
-        _wait_for_run(running)
-        run = running.run
-
+    run = asyncio.run(run_flow(hello_world, 300, run_kwargs={"my_value": 4}))
     assert run.successful
     assert run.data.custom_value == 9
 
@@ -38,9 +38,7 @@ def test_argo_hello_world_workflow_trigger(flows_path):
 def test_fanout(flows_path):
     fan_out = str(flows_path / "fanout.py")
 
-    with Runner(fan_out).run() as running:
-        _wait_for_run(running)
-        run = running.run
+    run = asyncio.run(run_flow(fan_out, 600))
 
     assert run.successful
     expected_outs = [
