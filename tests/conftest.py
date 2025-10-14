@@ -149,7 +149,3 @@ def configure_env(mf_service, monkeypatch, metaflow_home_path):
 
     aws_path = metaflow_home_path / "aws_config"
     monkeypatch.setenv("AWS_CONFIG_FILE", str(aws_path))
-
-    from metaflow import namespace
-
-    namespace("user:github-action")
