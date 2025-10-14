@@ -9,7 +9,7 @@ async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -
     with await Runner(flow).async_run(**run_kwargs) as running:
         await running.wait(timeout, stream="stdout")
         assert running.status == "successful"
-        return running.run
+        return Run(running.run.pathspec)
 
 
 @pytest.mark.timeout(300)
