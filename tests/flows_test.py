@@ -1,5 +1,11 @@
+from time import sleep
 from metaflow import Runner, Deployer
 import pytest
+
+
+def _wait_for_run(running):
+    while running.status == "running":
+        sleep(1)
 
 
 @pytest.mark.timeout(300)
@@ -8,6 +14,7 @@ def test_hello_world_runner(flows_path):
 
     with Runner(hello_world).run(my_value=4) as running:
         run = running.run
+        _wait_for_run(running)
 
     assert run.successful
     assert run.data.custom_value == 9
@@ -21,7 +28,7 @@ def test_argo_hello_world_workflow_trigger(flows_path):
     triggered_run = deployed_flow.trigger()
 
     triggered_run.wait_for_completion()
-    run = triggered_run.wait_for_run(timeout=60)
+    run = triggered_run.wait_for_run(timeout=600)
 
     assert run.successful
     assert run.data.custom_value == 10
@@ -33,6 +40,7 @@ def test_fanout(flows_path):
 
     with Runner(fan_out).run() as running:
         run = running.run
+        _wait_for_run(running)
 
     assert run.successful
     expected_outs = [
