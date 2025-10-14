@@ -1,11 +1,12 @@
 from typing import Optional
 import asyncio
-from metaflow import Runner, Deployer, Run
+from metaflow import Runner, Deployer, Run, namespace
 import pytest
 
 
 async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -> Run:
     run_kwargs = run_kwargs or {}
+    namespace("user:github-action")
     with await Runner(flow).async_run(**run_kwargs) as running:
         await running.wait(timeout, stream="stdout")
         assert running.status == "successful"
