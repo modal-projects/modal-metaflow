@@ -1,6 +1,6 @@
 from typing import Optional
 import asyncio
-from metaflow import Runner, Deployer, Run, namespace
+from metaflow import Runner, Deployer, Run
 import pytest
 
 
@@ -10,7 +10,6 @@ async def run_flow(flow: str, timeout: int, run_kwargs: Optional[dict] = None) -
         await running.wait(timeout, stream="stdout")
         assert running.status == "successful"
         pathspec = running.run.pathspec
-    namespace(None)
     return Run(pathspec)
 
 
@@ -20,6 +19,9 @@ def test_hello_world_runner(flows_path):
 
     print("XXX", os.getenv("METAFLOW_HOME"))
     print("XXX", os.getenv("METAFLOW_PROFILE"))
+
+    with open(os.getenv("METAFLOW_HOME", "") + "/config_modal.json") as f:
+        print(f.read())
     hello_world = str(flows_path / "hello_world.py")
 
     run = asyncio.run(run_flow(hello_world, 300, run_kwargs={"my_value": 4}))
