@@ -65,6 +65,7 @@ def _get_or_create_modal_app(
     app_name: str,
     func_name: str,
     modal_func_kwargs: dict,
+    oidc_role_arn: Optional[str],
     modal_environment: Optional[str] = None,
 ) -> tuple[modal_sdk.App, str]:
     """
@@ -91,6 +92,24 @@ def _get_or_create_modal_app(
         def metaflow_entry(step_cli: str, env_vars: dict):
             import os
             import subprocess
+            import boto3
+
+            if oidc_role_arn is not None:
+                # Use boto3 to assume oidc role, then put the creds in the subprocess
+                sts_client = boto3.client("sts")
+
+                # Assume role with Web Identity
+                credential_response = sts_client.assume_role_with_web_identity(
+                    RoleArn=oidc_role_arn,
+                    RoleSessionName="OIDCSession",
+                    WebIdentityToken=os.environ["MODAL_IDENTITY_TOKEN"],
+                )
+
+                # Extract credentials, and add them to the subprocess env
+                credentials = credential_response["Credentials"]
+                env_vars["AWS_ACCESS_KEY_ID"] = credentials["AccessKeyId"]
+                env_vars["AWS_SECRET_ACCESS_KEY"] = credentials["SecretAccessKey"]
+                env_vars["AWS_SESSION_TOKEN"] = credentials["SessionToken"]
 
             print(f"[Modal Worker Debug] FULL step_cli: {step_cli}")
 
@@ -198,6 +217,8 @@ class ModalDecorator(StepDecorator):
         "volumes": dict(),
         "secrets": list(),
         "name": None,
+        # decorator-specific kwargs
+        "role_arn": None,
         "mark_reentrant": False,
         "environment": None,  # optional Modal environment name
     }
@@ -212,6 +233,7 @@ class ModalDecorator(StepDecorator):
         self.env_vars = None
         self.requirements = []
         self.python_version = None
+        self.role_arn = self.attributes.pop("role_arn")
         self.mark_reentrant = self.attributes.pop("mark_reentrant")
         # Resolved Modal environment name for this step (from attribute or env)
         self._modal_environment_name: Optional[str] = None
