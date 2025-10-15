@@ -24,7 +24,6 @@ class ExampleFlow(FlowSpec):
     @modal(
         secrets=[aws_secret],
         image=image,
-        environment="jason-dev",
     )
     @step
     def start(self):
@@ -36,7 +35,6 @@ class ExampleFlow(FlowSpec):
     @modal(
         secrets=[aws_secret],
         image=image,
-        environment="jason-dev",
     )
     @step
     def process(self):

@@ -5,15 +5,17 @@ individual step functions, and deploying the App containing the @app.function-wr
 step functions. It also passes app/function names to `metaflow modal step --modal-app-name foo --modal-func-name bar`.
 """
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import uuid
-from functools import partial
+import tempfile
 from typing import Optional
 
 import modal as modal_sdk
+from metaflow import get_namespace
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
@@ -23,6 +25,8 @@ from metaflow.metaflow_config import (
     DEFAULT_RUNTIME_LIMIT,
     FEAT_ALWAYS_UPLOAD_CODE_PACKAGE,
 )
+from metaflow.packaging_sys import ContentType
+from metaflow.util import get_username, resolve_identity
 
 
 def in_modal_worker() -> bool:
@@ -37,8 +41,6 @@ def _sanitize_modal_app_name(flow_name: str, run_id: str, step_name: str) -> str
     - Must be shorter than 64 characters
     - Cannot conflict with App ID strings
     """
-    import hashlib
-
     # Replace dots with dashes to avoid issues
     clean_flow_name = flow_name.replace(".", "-")
     clean_run_id = run_id.replace(".", "-")
@@ -117,12 +119,6 @@ def _get_or_create_modal_app(
                 print(
                     f"[Modal Worker Debug] os.environ METAFLOW_SERVICE_URL: {os.environ.get('METAFLOW_SERVICE_URL')}"
                 )
-                pycheck = subprocess.run(
-                    "which python",
-                    shell=True,
-                    executable="/bin/bash",  # Force bash for bash-specific syntax
-                    capture_output=True,
-                )
 
                 completed = subprocess.run(
                     step_cli,
@@ -174,7 +170,7 @@ patch_allow = [
 ]
 
 
-def patch_decorator(deco):
+def disable_decorator(deco):
     s = StepDecorator()
     for method_name in patch_allow:
         method = getattr(s, method_name)
@@ -439,7 +435,7 @@ class ModalDecorator(StepDecorator):
         if not in_modal_worker() and in_argo:
             for deco in decorators:
                 if deco.name in ["model", "checkpoint"]:
-                    patch_decorator(deco)
+                    disable_decorator(deco)
 
     def runtime_init(self, flow, graph, package, run_id):
         """Deploy Modal app and save package info for local execution."""
@@ -459,10 +455,6 @@ class ModalDecorator(StepDecorator):
         # Extract the full code package (including non-Python files like requirements.txt)
         # following the @conda decorator pattern for accessing external files
         if self.__class__._metaflow_home is None:
-            import tempfile
-
-            from metaflow.packaging_sys import ContentType
-
             # Do this ONCE per flow - use class-level shared directory
             self.__class__._metaflow_home = tempfile.TemporaryDirectory(dir="/tmp")
             package.extract_into(
@@ -586,10 +578,6 @@ class ModalDecorator(StepDecorator):
     ):
         """Task pre-step hook - capture code package info for task_decorate."""
         # Debug: Log metadata configuration and namespace in Argo pod
-        import os
-
-        from metaflow import get_namespace
-        from metaflow.util import get_username, resolve_identity
 
         print("[Modal Debug] task_pre_step in Argo pod:")
         print(
@@ -698,10 +686,6 @@ class ModalDecorator(StepDecorator):
                 # Extract the full code package (including non-Python files like requirements.txt)
                 # following the @conda decorator pattern for accessing external files in Argo execution
                 if self.__class__._metaflow_home is None:
-                    import tempfile
-
-                    from metaflow.packaging_sys import ContentType
-
                     # Do this ONCE per flow - use class-level shared directory
                     self.__class__._metaflow_home = tempfile.TemporaryDirectory(
                         dir="/tmp"
@@ -757,8 +741,9 @@ class ModalDecorator(StepDecorator):
                 # Get Modal environment
                 modal_environment = (
                     self.attributes.get("environment")
-                    or os.environ.get("METAFLOW_MODAL_ENVIRONMENT")
                     or os.environ.get("MODAL_ENVIRONMENT")
+                    or os.environ.get("METAFLOW_MODAL_ENVIRONMENT")
+                    or modal_sdk.config.Config().get("environment")
                 )
 
                 # Deploy the Modal app first (needed before calling modal CLI)
@@ -910,8 +895,6 @@ class ModalDecorator(StepDecorator):
         # Clean up Modal app deployed in Argo execution
         if hasattr(self, "argo_deployed_app_id") and self.argo_deployed_app_id:
             try:
-                import subprocess
-
                 stop_cmd = ["modal", "app", "stop", str(self.argo_deployed_app_id)]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
             except Exception:

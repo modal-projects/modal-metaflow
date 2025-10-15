@@ -62,7 +62,6 @@ class LlamaInstructionTuning(FlowSpec, HuggingFaceLora):
     @modal(
         image=hf_image,
         secrets=[aws_secret],
-        environment="jason-dev",
     )
     @step
     def start(self):
@@ -92,7 +91,6 @@ class LlamaInstructionTuning(FlowSpec, HuggingFaceLora):
         cpu=14,
         memory=72000,
         secrets=[aws_secret],
-        environment="jason-dev",
     )
     @retry(times=3)
     @step
