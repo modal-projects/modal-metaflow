@@ -46,12 +46,13 @@ def func(self, ...):
 In particular, this hasn't yet been tested with [Modal's OIDC integration](https://modal.com/docs/guide/oidc-integration#demo-usage-with-aws).
 
 # TODOs
+- [ ] fix `foreach` support for Argo codepath
+- [ ] refactor modal_decorator into local execution vs argo pod execution code paths
 - [ ] mflog -- figure out what should be logged across local/argo/modal execution contexts
 - [ ] mfconf -- standardize configuration related to modal-metaflow as full metaflow conf instead of simply envvars
-- [ ] refactor modal_decorator into local execution vs argo pod execution code paths
 - [ ] simple card example - card runs in Modal, output visible in metaflow ui, patched out in argo pod
-- [ ] add metaflow ui serving to `metadata_service.py`
-- [ ] testing - automated testing of simple/test example flows
 - [ ] end-to-end testing of OICD with S3 bucket used by flow
-- [ ] simple example of hf_hub, model, checkpoint decorators running in modal
 - [ ] pypi packaging
+- [ ] simple, testable examples of hf_hub, model, checkpoint decorators running in modal
+- [x] testing - automated testing of simple/test example flows
+- [ ] ~add metaflow ui serving to `metadata_service.py`~ (not planned, `metadata_service.py` superceded by sandbox dev env)
