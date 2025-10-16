@@ -15,7 +15,6 @@ import tempfile
 from typing import Optional
 
 import modal as modal_sdk
-from metaflow import get_namespace
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
@@ -524,6 +523,7 @@ class ModalDecorator(StepDecorator):
                 app_name,
                 func_name,
                 modal_func_kwargs=modal_func_kwargs,
+                oidc_role_arn=self.role_arn,
                 modal_environment=modal_environment,
             )
             # Save app ID for cleanup
@@ -612,7 +612,6 @@ class ModalDecorator(StepDecorator):
         print(
             f"[Modal Debug] Metadata backend type: {metadata.TYPE if hasattr(metadata, 'TYPE') else 'UNKNOWN'}"
         )
-        print(f"[Modal Debug] Current namespace (before): {get_namespace()}")
         print(f"[Modal Debug] Resolved identity: {resolve_identity()}")
         print(f"[Modal Debug] Username: {get_username()}")
         print(f"[Modal Debug] USER env: {os.environ.get('USER')}")
@@ -775,6 +774,7 @@ class ModalDecorator(StepDecorator):
                     app_name,
                     func_name,
                     modal_func_kwargs=modal_func_kwargs,
+                    oidc_role_arn=self.role_arn,
                     modal_environment=modal_environment,
                 )
 
