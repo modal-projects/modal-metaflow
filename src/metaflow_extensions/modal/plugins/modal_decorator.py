@@ -91,9 +91,10 @@ def _get_or_create_modal_app(
         def metaflow_entry(step_cli: str, env_vars: dict):
             import os
             import subprocess
-            import boto3
 
             if oidc_role_arn is not None:
+                import boto3
+
                 # Use boto3 to assume oidc role, then put the creds in the subprocess
                 sts_client = boto3.client("sts")
 
