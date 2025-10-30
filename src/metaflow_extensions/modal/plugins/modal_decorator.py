@@ -74,22 +74,6 @@ def _get_or_create_modal_app(
     Uses Modal's built-in idempotency - multiple processes can safely
     call this with the same parameters.
     """
-    # if "image" in modal_func_kwargs:
-    #     image = modal_func_kwargs["image"]
-    # else:
-    #     image = modal_sdk.Image.debian_slim()
-
-    # modal_func_kwargs["image"] = (
-    #     image.uv_pip_install("metaflow")
-    #     .add_local_dir("src", remote_path="/modal-metaflow/src", copy=True)
-    #     .add_local_file(
-    #         "pyproject.toml",
-    #         remote_path="/modal-metaflow/pyproject.toml",
-    #         copy=True,
-    #     )
-    #     .uv_pip_install("/modal-metaflow")
-    # )
-
     try:
         # Try to lookup existing app first
         app = modal_sdk.App.lookup(app_name, environment_name=modal_environment)
