@@ -63,10 +63,9 @@ def _sanitize_modal_app_name(flow_name: str, run_id: str, step_name: str) -> str
 
 def _get_or_create_modal_app(
     app_name: str,
-    func_name: str,
     modal_func_kwargs: dict,
     modal_environment: Optional[str] = None,
-) -> tuple[modal_sdk.App, str]:
+) -> modal_sdk.App:
     """
     Get or create a Modal app using deterministic naming.
     Returns (app, function_name).
@@ -77,7 +76,7 @@ def _get_or_create_modal_app(
     try:
         # Try to lookup existing app first
         app = modal_sdk.App.lookup(app_name, environment_name=modal_environment)
-        return app, func_name
+        return app
     except modal_sdk.exception.NotFoundError:
         # App doesn't exist, deploy it
         # Create and deploy the app
@@ -92,7 +91,7 @@ def _get_or_create_modal_app(
         else:
             app.deploy()
 
-        return app, func_name
+        return app
 
 
 patch_allow = [
@@ -441,10 +440,8 @@ class ModalDecorator(StepDecorator):
         try:
             flow_name = flow.name
             app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-            func_name = f"{flow_name}__{step_name}"
-            app, _ = _get_or_create_modal_app(
+            app = _get_or_create_modal_app(
                 app_name,
-                func_name,
                 modal_func_kwargs=modal_func_kwargs,
                 modal_environment=modal_environment,
             )
@@ -485,9 +482,7 @@ class ModalDecorator(StepDecorator):
                 app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
 
                 cli_args.command_options["modal-app-name"] = app_name
-                cli_args.command_options["modal-func-name"] = (
-                    f"{flow_name}__{step_name}"
-                )
+                cli_args.command_options["modal-func-name"] = "metaflow_entry"
                 cli_args.command_options["run-time-limit"] = self.attributes.get(
                     "timeout", DEFAULT_RUNTIME_LIMIT
                 )
@@ -690,10 +685,8 @@ class ModalDecorator(StepDecorator):
 
                 # Deploy the Modal app first (needed before calling modal CLI)
                 app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-                func_name = f"{flow_name}__{step_name}"
-                app, func_name = _get_or_create_modal_app(
+                app = _get_or_create_modal_app(
                     app_name,
-                    func_name,
                     modal_func_kwargs=modal_func_kwargs,
                     modal_environment=modal_environment,
                 )
@@ -748,7 +741,7 @@ class ModalDecorator(StepDecorator):
                     "--modal-app-name",
                     app_name,
                     "--modal-func-name",
-                    func_name,
+                    "metaflow_entry",
                     "--run-id",
                     run_id,
                     "--task-id",

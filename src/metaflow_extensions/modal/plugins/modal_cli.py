@@ -410,7 +410,7 @@ def _execute_modal_task(
             try:
                 func = modal_sdk.Function.from_name(
                     modal_app_name,
-                    "metaflow_entry",
+                    modal_func_name,
                     environment_name=env_name,
                 )
                 break
