@@ -86,6 +86,7 @@ def modal():
 @click.option("--modal-app-name", help="Modal app name for function lookup.")
 @click.option("--modal-func-name", help="Modal function name for execution.")
 @click.option("--environment", multiple=True, help="Environment variables for Modal.")
+@click.option("--modal-role-arn", help="Role ARN for Modal to authenticate with.")
 @click.pass_context
 def step(
     ctx,
@@ -98,6 +99,7 @@ def step(
     modal_app_name=None,
     modal_func_name=None,
     environment=None,
+    modal_role_arn=None,
     **kwargs,
 ):
     """Execute a single task using Modal infrastructure."""
@@ -270,6 +272,7 @@ def step(
             env=env,
             modal_app_name=modal_app_name,
             modal_func_name=modal_func_name,
+            modal_role_arn=modal_role_arn,
             run_time_limit=run_time_limit,
             echo=echo,
             **kwargs,
@@ -361,6 +364,7 @@ def _execute_modal_task(
     env: Dict[str, str],
     modal_app_name: Optional[str] = None,
     modal_func_name: Optional[str] = None,
+    modal_role_arn: Optional[str] = None,
     run_time_limit: Optional[int] = None,
     echo=None,
     **kwargs,
@@ -419,7 +423,7 @@ def _execute_modal_task(
             return 1
 
         try:
-            call = func.spawn(step_cli, env)
+            call = func.spawn(step_cli, env, modal_role_arn)
         except Exception as e:
             if echo:
                 echo(f"Failed to spawn Modal function: {e}")

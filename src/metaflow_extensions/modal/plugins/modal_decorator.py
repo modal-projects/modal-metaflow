@@ -15,6 +15,7 @@ import tempfile
 from typing import Optional
 
 import modal as modal_sdk
+from .runner import metaflow_entry
 from metaflow.decorators import StepDecorator
 from metaflow.exception import MetaflowException
 from metaflow.metadata_provider.metadata import MetaDatum
@@ -62,11 +63,9 @@ def _sanitize_modal_app_name(flow_name: str, run_id: str, step_name: str) -> str
 
 def _get_or_create_modal_app(
     app_name: str,
-    func_name: str,
     modal_func_kwargs: dict,
-    oidc_role_arn: Optional[str],
     modal_environment: Optional[str] = None,
-) -> tuple[modal_sdk.App, str]:
+) -> modal_sdk.App:
     """
     Get or create a Modal app using deterministic naming.
     Returns (app, function_name).
@@ -74,92 +73,15 @@ def _get_or_create_modal_app(
     Uses Modal's built-in idempotency - multiple processes can safely
     call this with the same parameters.
     """
-
     try:
         # Try to lookup existing app first
         app = modal_sdk.App.lookup(app_name, environment_name=modal_environment)
-        return app, func_name
+        return app
     except modal_sdk.exception.NotFoundError:
         # App doesn't exist, deploy it
         # Create and deploy the app
-        app = modal_sdk.App(name=app_name)
-
-        # Ensure the function has the correct name
-        modal_func_kwargs["name"] = func_name
-
-        @app.function(**modal_func_kwargs)
-        def metaflow_entry(step_cli: str, env_vars: dict):
-            import os
-            import subprocess
-
-            if oidc_role_arn is not None:
-                import boto3
-
-                # Use boto3 to assume oidc role, then put the creds in the subprocess
-                sts_client = boto3.client("sts")
-
-                # Assume role with Web Identity
-                credential_response = sts_client.assume_role_with_web_identity(
-                    RoleArn=oidc_role_arn,
-                    RoleSessionName="OIDCSession",
-                    WebIdentityToken=os.environ["MODAL_IDENTITY_TOKEN"],
-                )
-
-                # Extract credentials, and add them to the subprocess env
-                credentials = credential_response["Credentials"]
-                env_vars["AWS_ACCESS_KEY_ID"] = credentials["AccessKeyId"]
-                env_vars["AWS_SECRET_ACCESS_KEY"] = credentials["SecretAccessKey"]
-                env_vars["AWS_SESSION_TOKEN"] = credentials["SessionToken"]
-
-            print(f"[Modal Worker Debug] FULL step_cli: {step_cli}")
-
-            # Debug: Log what metadata configuration Modal worker receives
-            print("[Modal Worker Debug] Environment variables received:")
-            print(
-                f"[Modal Worker Debug] METAFLOW_DEFAULT_METADATA: {env_vars.get('METAFLOW_DEFAULT_METADATA')}"
-            )
-            print(
-                f"[Modal Worker Debug] METAFLOW_SERVICE_URL: {env_vars.get('METAFLOW_SERVICE_URL')}"
-            )
-            print(
-                f"[Modal Worker Debug] METAFLOW_RUN_ID: {env_vars.get('METAFLOW_RUN_ID')}"
-            )
-
-            try:
-                # Merge environment variables
-                if env_vars:
-                    os.environ.update(env_vars)
-
-                # Debug: Verify environment variables are set
-                print("[Modal Worker Debug] After setting env vars:")
-                print(
-                    f"[Modal Worker Debug] os.environ METAFLOW_DEFAULT_METADATA: {os.environ.get('METAFLOW_DEFAULT_METADATA')}"
-                )
-                print(
-                    f"[Modal Worker Debug] os.environ METAFLOW_SERVICE_URL: {os.environ.get('METAFLOW_SERVICE_URL')}"
-                )
-
-                completed = subprocess.run(
-                    step_cli,
-                    shell=True,
-                    executable="/bin/bash",  # Force bash for bash-specific syntax
-                    capture_output=True,
-                )
-                stdout = (
-                    completed.stdout.decode(errors="ignore") if completed.stdout else ""
-                )
-                stderr = (
-                    completed.stderr.decode(errors="ignore") if completed.stderr else ""
-                )
-                print(stdout)
-                print(stderr, file=sys.stderr)
-                return completed.returncode, stdout, stderr
-            except Exception:
-                import traceback as _tb
-
-                err = _tb.format_exc()
-                print(err, file=sys.stderr)
-                return 1, "", err
+        app = modal_sdk.App(name=app_name, include_source=True)
+        app.function(**modal_func_kwargs)(metaflow_entry)
 
         # Deploy the app
         if modal_environment:
@@ -169,7 +91,7 @@ def _get_or_create_modal_app(
         else:
             app.deploy()
 
-        return app, func_name
+        return app
 
 
 patch_allow = [
@@ -495,7 +417,6 @@ class ModalDecorator(StepDecorator):
 
         # Build Modal function kwargs
         modal_func_kwargs = {
-            "serialized": True,
             "timeout": int(self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)),
         }
 
@@ -519,12 +440,9 @@ class ModalDecorator(StepDecorator):
         try:
             flow_name = flow.name
             app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-            func_name = f"{flow_name}__{step_name}"
-            app, _ = _get_or_create_modal_app(
+            app = _get_or_create_modal_app(
                 app_name,
-                func_name,
                 modal_func_kwargs=modal_func_kwargs,
-                oidc_role_arn=self.role_arn,
                 modal_environment=modal_environment,
             )
             # Save app ID for cleanup
@@ -564,9 +482,7 @@ class ModalDecorator(StepDecorator):
                 app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
 
                 cli_args.command_options["modal-app-name"] = app_name
-                cli_args.command_options["modal-func-name"] = (
-                    f"{flow_name}__{step_name}"
-                )
+                cli_args.command_options["modal-func-name"] = "metaflow_entry"
                 cli_args.command_options["run-time-limit"] = self.attributes.get(
                     "timeout", DEFAULT_RUNTIME_LIMIT
                 )
@@ -736,7 +652,6 @@ class ModalDecorator(StepDecorator):
 
                 # Build Modal function kwargs
                 modal_func_kwargs = {
-                    "serialized": True,
                     "timeout": int(
                         self.attributes.get("timeout", DEFAULT_RUNTIME_LIMIT)
                     ),
@@ -770,12 +685,9 @@ class ModalDecorator(StepDecorator):
 
                 # Deploy the Modal app first (needed before calling modal CLI)
                 app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-                func_name = f"{flow_name}__{step_name}"
-                app, func_name = _get_or_create_modal_app(
+                app = _get_or_create_modal_app(
                     app_name,
-                    func_name,
                     modal_func_kwargs=modal_func_kwargs,
-                    oidc_role_arn=self.role_arn,
                     modal_environment=modal_environment,
                 )
 
@@ -829,12 +741,15 @@ class ModalDecorator(StepDecorator):
                     "--modal-app-name",
                     app_name,
                     "--modal-func-name",
-                    func_name,
+                    "metaflow_entry",
                     "--run-id",
                     run_id,
                     "--task-id",
                     task_id,
                 ]
+
+                if self.role_arn:
+                    modal_cmd.extend(["--modal-role-arn", self.role_arn])
 
                 # Add input-paths if available
                 if input_paths:

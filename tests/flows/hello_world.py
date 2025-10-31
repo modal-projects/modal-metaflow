@@ -16,8 +16,15 @@ class HelloFlow(FlowSpec):
     @modal(secrets=[aws_secret])
     @step
     def hello(self):
-        print("Metaflow says: Hi from Modal!")
+        print(f"Metaflow says: Hi from Modal with value {self.custom_value}!")
         self.custom_value += 3
+        self.next(self.hello2)
+
+    @modal(secrets=[aws_secret])
+    @step
+    def hello2(self):
+        print(f"A second step with value: {self.custom_value}")
+        self.custom_value *= 3
         self.next(self.end)
 
     @step
