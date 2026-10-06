@@ -32,8 +32,10 @@ from metaflow.metaflow_config import (
 )
 from metaflow.mflog import (
     BASH_SAVE_LOGS,
+    TASK_LOG_SOURCE,
     bash_capture_logs,
     export_mflog_env_vars,
+    get_log_tailer,
 )
 
 LOGS_DIR = "$PWD/.logs"
@@ -286,6 +288,10 @@ def step(
         )
 
         if exit_code != 0:
+            for stream in ("stdout", "stderr"):
+                location = ds.get_log_location(TASK_LOG_SOURCE, stream)
+                for line in get_log_tailer(location, ds.TYPE):
+                    echo(line, stream=stream)
             _sync_metadata()
             sys.exit(exit_code)
 
@@ -444,6 +450,8 @@ def _execute_modal_task(
                 echo(stderr_result, stream="stderr")
                 echo(f"Modal function completed with exit code {result}")
             return result
+        except subprocess.CalledProcessError as e:
+            return e.returncode
         except TimeoutError:
             if echo:
                 echo("Modal function timed out")

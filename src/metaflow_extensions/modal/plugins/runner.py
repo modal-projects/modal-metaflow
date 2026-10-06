@@ -2,6 +2,7 @@ def metaflow_entry(step_cli: str, env_vars: dict, oidc_role_arn: str | None = No
     import os
     import subprocess
     import sys
+    from tempfile import TemporaryDirectory
 
     if oidc_role_arn is not None:
         import boto3
@@ -48,20 +49,25 @@ def metaflow_entry(step_cli: str, env_vars: dict, oidc_role_arn: str | None = No
             f"[Modal Worker Debug] os.environ METAFLOW_SERVICE_URL: {os.environ.get('METAFLOW_SERVICE_URL')}"
         )
 
-        completed = subprocess.run(
-            step_cli,
-            shell=True,
-            executable="/bin/bash",  # Force bash for bash-specific syntax
-            capture_output=True,
-        )
+        with TemporaryDirectory(prefix="metaflow-modal-") as directory:
+            completed = subprocess.run(
+                step_cli,
+                check=False,
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+                cwd=directory,
+            )
         stdout = completed.stdout.decode(errors="ignore") if completed.stdout else ""
         stderr = completed.stderr.decode(errors="ignore") if completed.stderr else ""
         print(stdout)
         print(stderr, file=sys.stderr)
+        if completed.returncode:
+            raise subprocess.CalledProcessError(completed.returncode, "Metaflow step")
         return completed.returncode, stdout, stderr
     except Exception:
         import traceback as _tb
 
         err = _tb.format_exc()
         print(err, file=sys.stderr)
-        return 1, "", err
+        raise
