@@ -317,8 +317,7 @@ class ModalDecorator(StepDecorator):
 
                 # Collect information from other decorators
                 elif deco.name == "environment":
-                    if hasattr(deco, "vars") and len(deco.vars) > 0:
-                        self.env_vars = deco.vars
+                    self.env_vars = deco.attributes["vars"]
 
                 elif deco.name == "pypi":
                     if hasattr(deco, "packages") and len(deco.packages) > 0:

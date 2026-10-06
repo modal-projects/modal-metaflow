@@ -175,6 +175,12 @@ def step(
         )
     }
 
+    for deco in node.decorators:
+        if deco.name == "environment":
+            env.update(
+                {key: str(value) for key, value in deco.attributes["vars"].items()}
+            )
+
     # Add split variables for input paths
     if split_vars:
         env.update(split_vars)
@@ -202,6 +208,7 @@ def step(
         "METAFLOW_DEFAULT_AWS_CLIENT_PROVIDER": DEFAULT_AWS_CLIENT_PROVIDER,
         "METAFLOW_AWS_SECRETS_MANAGER_DEFAULT_REGION": AWS_SECRETS_MANAGER_DEFAULT_REGION,
         "METAFLOW_S3_ENDPOINT_URL": S3_ENDPOINT_URL,
+        "AWS_ENDPOINT_URL_S3": S3_ENDPOINT_URL,
         "METAFLOW_OTEL_ENDPOINT": OTEL_ENDPOINT,
         # Pass production token and user info to ensure namespace consistency between Argo pod and Modal worker
         "METAFLOW_PRODUCTION_TOKEN": os.environ.get("METAFLOW_PRODUCTION_TOKEN"),
