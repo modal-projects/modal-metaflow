@@ -26,6 +26,7 @@ from metaflow.metaflow_config import (
     FEAT_ALWAYS_UPLOAD_CODE_PACKAGE,
 )
 from metaflow.packaging_sys import ContentType
+from metaflow.sidecar import Sidecar
 from metaflow.util import get_username, resolve_identity
 
 
@@ -536,8 +537,9 @@ class ModalDecorator(StepDecorator):
             f"[Modal Debug] METAFLOW_PRODUCTION_TOKEN env: {os.environ.get('METAFLOW_PRODUCTION_TOKEN')}"
         )
 
-        # Skip if we're inside a Modal worker
         if in_modal_worker():
+            self._save_logs_sidecar = Sidecar("save_logs_periodically")
+            self._save_logs_sidecar.start()
             return
 
         # Persist references for use in task_decorate
@@ -822,6 +824,12 @@ class ModalDecorator(StepDecorator):
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
     ):
         """Task finished hook."""
+        if in_modal_worker():
+            sidecar = getattr(self, "_save_logs_sidecar", None)
+            if sidecar is not None:
+                sidecar.terminate()
+            return
+
         if hasattr(self, "metadata") and self.metadata.TYPE == "local":
             # Note that the datastore is *always* Amazon S3 (see
             # runtime_task_created function).
