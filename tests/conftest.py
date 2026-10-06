@@ -1,12 +1,14 @@
 import os
-import pytest
 from pathlib import Path
+
+import pytest
+
 from tests.scaffold import (
+    DEFAULT_TIMEOUT,
     create_metaflow_modal_resources,
+    start_argo_kubernetes,
     stop_argo_kubernetes,
     write_config,
-    start_argo_kubernetes,
-    DEFAULT_TIMEOUT,
 )
 
 
@@ -140,3 +142,6 @@ def configure_env(mf_service, monkeypatch, metaflow_home_path):
 def in_ci():
     # Accessing run is not working on github actions.
     return "GITHUB_RUN_ID" in os.environ
+
+
+collect_ignore_glob = ["flows/integration/test_*.py"]

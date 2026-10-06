@@ -1,7 +1,4 @@
-from typing import Optional
-
-
-def metaflow_entry(step_cli: str, env_vars: dict, oidc_role_arn: Optional[str] = None):
+def metaflow_entry(step_cli: str, env_vars: dict, oidc_role_arn: str | None = None):
     import os
     import subprocess
     import sys
