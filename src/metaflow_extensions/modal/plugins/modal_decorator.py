@@ -178,8 +178,7 @@ class ModalDecorator(StepDecorator):
 
         if modal_timeout_specified and timeout_decorator_present:
             raise ModalDecoratorException(
-                "Cannot specify both @modal(timeout=...) and @timeout decorator. "
-                "Please use only one timeout configuration method."
+                "Choose @timeout or @modal(timeout=...), not both."
             )
 
         # Fallback to globally configured timeout
