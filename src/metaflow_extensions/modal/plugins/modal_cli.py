@@ -81,11 +81,6 @@ def modal():
 @click.option(
     "--max-user-code-retries", default=0, help="Passed to the top-level 'step'."
 )
-@click.option(
-    "--run-time-limit",
-    default=5 * 24 * 60 * 60,
-    help="Run time limit in seconds for the Modal function. Default is 5 days.",
-)
 @click.option("--modal-app-name", help="Modal app name for function lookup.")
 @click.option("--modal-func-name", help="Modal function name for execution.")
 @click.option("--environment", multiple=True, help="Environment variables for Modal.")
@@ -98,7 +93,6 @@ def step(
     code_package_sha,
     code_package_url,
     executable=None,
-    run_time_limit=None,
     modal_app_name=None,
     modal_func_name=None,
     environment=None,
@@ -289,7 +283,6 @@ def step(
             modal_app_name=modal_app_name,
             modal_func_name=modal_func_name,
             modal_role_arn=modal_role_arn,
-            run_time_limit=run_time_limit,
             clustered=bool(modal_deco and modal_deco.attributes["clustered_size"]),
             echo=echo,
             **kwargs,
@@ -386,7 +379,6 @@ def _execute_modal_task(
     modal_app_name: Optional[str] = None,
     modal_func_name: Optional[str] = None,
     modal_role_arn: Optional[str] = None,
-    run_time_limit: Optional[int] = None,
     clustered: bool = False,
     echo=None,
     **kwargs,

@@ -495,9 +495,6 @@ class ModalDecorator(StepDecorator):
 
                 cli_args.command_options["modal-app-name"] = app_name
                 cli_args.command_options["modal-func-name"] = "metaflow_entry"
-                cli_args.command_options["run-time-limit"] = self.attributes.get(
-                    "timeout", DEFAULT_RUNTIME_LIMIT
-                )
             else:
                 print(
                     "[Modal] No package info - CLI rewrite skipped, will use task_decorate"
