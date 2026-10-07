@@ -66,6 +66,8 @@ def _get_or_create_modal_app(
     app_name: str,
     modal_func_kwargs: dict,
     modal_environment: Optional[str] = None,
+    multicluster_size: Optional[int] = None,
+    multicluster_rdma_enabled: Optional[bool] = None,
 ) -> modal_sdk.App:
     """
     Get or create a Modal app using deterministic naming.
@@ -82,7 +84,12 @@ def _get_or_create_modal_app(
         # App doesn't exist, deploy it
         # Create and deploy the app
         app = modal_sdk.App(name=app_name, include_source=True)
-        app.function(**modal_func_kwargs)(metaflow_entry)
+        entrypoint = metaflow_entry
+        if multicluster_size is not None:
+            entrypoint = modal_sdk.clustered(
+                size=multicluster_size, rdma=multicluster_rdma_enabled or False
+            )(entrypoint)
+        app.function(**modal_func_kwargs)(entrypoint)
 
         # Deploy the app
         if modal_environment:
@@ -132,6 +139,8 @@ class ModalDecorator(StepDecorator):
     defaults = {
         "cpu": None,
         "gpu": None,
+        "multicluster_size": None,
+        "multicluster_rdma_enabled": None,
         "memory": None,
         "ephemeral_disk": None,
         "image": None,
@@ -238,6 +247,14 @@ class ModalDecorator(StepDecorator):
                 "The *@modal* decorator requires --datastore=s3 at the moment."
             )
 
+        if (
+            self.attributes["multicluster_rdma_enabled"]
+            and self.attributes["multicluster_size"] is None
+        ):
+            raise ModalDecoratorException(
+                "multicluster_rdma_enabled=True requires multicluster_size."
+            )
+
         # Store basic context
         self.environment = environment
         self.flow_datastore = flow_datastore
@@ -255,6 +272,11 @@ class ModalDecorator(StepDecorator):
         in_argo = False
         for deco in decorators:
             if hasattr(deco, "name"):
+                if deco.name == "parallel":
+                    raise ModalDecoratorException(
+                        "@parallel is unsupported with @modal. "
+                        "Use @modal(multicluster_size=...) for multi-node execution."
+                    )
                 if deco.name == "kubernetes":
                     # If the user explicitly authored @kubernetes on this step, keep prior behavior.
                     is_user_k8s = getattr(deco, "statically_defined", False)
@@ -438,6 +460,8 @@ class ModalDecorator(StepDecorator):
                 app_name,
                 modal_func_kwargs=modal_func_kwargs,
                 modal_environment=modal_environment,
+                multicluster_size=self.attributes["multicluster_size"],
+                multicluster_rdma_enabled=self.attributes["multicluster_rdma_enabled"],
             )
             # Save app ID for cleanup
             self.deployed_app_id = getattr(app, "app_id", None)
@@ -489,7 +513,9 @@ class ModalDecorator(StepDecorator):
         """Clean up deployed Modal app for local execution."""
         if hasattr(self, "deployed_app_id") and self.deployed_app_id:
             try:
-                stop_cmd = ["modal", "app", "stop", str(self.deployed_app_id)]
+                stop_cmd = [
+                    "modal", "app", "stop", "--yes", str(self.deployed_app_id)
+                ]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
             except Exception:
                 # App cleanup failures are non-fatal
@@ -533,6 +559,14 @@ class ModalDecorator(StepDecorator):
         )
 
         if in_modal_worker():
+            from metaflow import current
+            from .cluster import ModalCluster
+
+            cluster = ModalCluster.from_env()
+            if cluster is not None:
+                current._update_env({"modal_cluster": cluster})
+                if cluster.node_rank:  # only rank 0 saves artifacts
+                    task_datastore._persist = False
             self._save_logs_sidecar = Sidecar("save_logs_periodically")
             self._save_logs_sidecar.start()
             return
@@ -593,9 +627,11 @@ class ModalDecorator(StepDecorator):
         # If we're inside a Modal worker, execute user code directly
 
         if in_modal_worker():
-            print("[Modal Worker Debug]: in task_decorate")
-            print(f"[Modal Worker Debug]: image {self.attributes.get('image')}")
-            print(f"[Modal Worker Debug]: all attributes {self.attributes}")
+            from .cluster import ModalCluster
+
+            cluster = ModalCluster.from_env()
+            if cluster is not None and cluster.node_rank == 0:
+                return cluster.wait_for_followers(step_func)
             return step_func
 
         # Check if this is local execution where runtime_step_cli should have handled this
@@ -684,6 +720,10 @@ class ModalDecorator(StepDecorator):
                     app_name,
                     modal_func_kwargs=modal_func_kwargs,
                     modal_environment=modal_environment,
+                    multicluster_size=self.attributes["multicluster_size"],
+                    multicluster_rdma_enabled=self.attributes[
+                        "multicluster_rdma_enabled"
+                    ],
                 )
 
                 # Store app info for cleanup in task_finished
@@ -826,15 +866,15 @@ class ModalDecorator(StepDecorator):
             return
 
         if hasattr(self, "metadata") and self.metadata.TYPE == "local":
-            # Note that the datastore is *always* Amazon S3 (see
-            # runtime_task_created function).
             print("[Modal] Syncing local metadata to datastore")
             sync_local_metadata_to_datastore(DATASTORE_LOCAL_DIR, self.task_datastore)
 
         # Clean up Modal app deployed in Argo execution
         if hasattr(self, "argo_deployed_app_id") and self.argo_deployed_app_id:
             try:
-                stop_cmd = ["modal", "app", "stop", str(self.argo_deployed_app_id)]
+                stop_cmd = [
+                    "modal", "app", "stop", "--yes", str(self.argo_deployed_app_id)
+                ]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
             except Exception:
                 # App cleanup failures are non-fatal

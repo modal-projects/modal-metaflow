@@ -4,6 +4,7 @@ The `metaflow modal step` subcommand is used to launch individual step method ex
 It's meant to be invoked by `ModalDecorator.runtime_step_cli`.
 """
 
+import contextlib
 import json
 import os
 import shlex
@@ -147,8 +148,11 @@ def step(
         }
         kwargs["input_paths"] = "".join("${%s}" % s for s in split_vars.keys())
 
+    # read from the environment so multinode followers can use their own task id.
+    step_kwargs = dict(kwargs, task_id="${METAFLOW_MODAL_TASK_ID}")
+
     # Construct step arguments
-    step_args = " ".join(util.dict_to_cli_options(kwargs))
+    step_args = " ".join(util.dict_to_cli_options(step_kwargs))
     step_cli = "{entrypoint} {top_args} step {step} {step_args}".format(
         entrypoint=entrypoint,
         top_args=top_args,
@@ -233,6 +237,7 @@ def step(
     env_vars_to_add = {k: v for k, v in env_vars_to_add.items() if v is not None}
 
     env.update(env_vars_to_add)
+    env["METAFLOW_MODAL_TASK_ID"] = str(kwargs["task_id"])
 
     # Set up log locations for streaming
     ds = ctx.obj.flow_datastore.get_task_datastore(
@@ -266,7 +271,7 @@ def step(
         ctx,
         kwargs["run_id"],
         step_name,
-        kwargs["task_id"],
+        "${METAFLOW_MODAL_TASK_ID}",
         retry_count,
         code_package_metadata,
         code_package_url,
@@ -276,6 +281,8 @@ def step(
 
     try:
         # Execute the Modal task
+        # @modal may be absent here when it was attached with --with on argo
+        modal_deco = next((d for d in node.decorators if d.name == "modal"), None)
         exit_code = _execute_modal_task(
             step_cli=shlex.join(step_cli),
             env=env,
@@ -283,6 +290,7 @@ def step(
             modal_func_name=modal_func_name,
             modal_role_arn=modal_role_arn,
             run_time_limit=run_time_limit,
+            clustered=bool(modal_deco and modal_deco.attributes["multicluster_size"]),
             echo=echo,
             **kwargs,
         )
@@ -379,6 +387,7 @@ def _execute_modal_task(
     modal_func_name: Optional[str] = None,
     modal_role_arn: Optional[str] = None,
     run_time_limit: Optional[int] = None,
+    clustered: bool = False,
     echo=None,
     **kwargs,
 ) -> int:
@@ -465,6 +474,11 @@ def _execute_modal_task(
             if echo:
                 echo(f"Modal function failed: {e}")
             return 1
+        finally:
+            # multinode followers keep running after rank 0 returns or fails
+            if clustered:
+                with contextlib.suppress(Exception):
+                    call.cancel(terminate_containers=True)
 
     except Exception as e:
         if echo:

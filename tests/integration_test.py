@@ -40,7 +40,22 @@ def flow_env(mf_service, metaflow_home_path):
     )
 
 
-@pytest.mark.parametrize("flow", sorted(FLOWS.glob("test_*.py")), ids=lambda p: p.stem)
+# skip multi node tests unless flag passed intentionally
+@pytest.mark.parametrize(
+    "flow",
+    [
+        pytest.param(
+            flow,
+            id=flow.stem,
+            marks=pytest.mark.skipif(
+                flow.stem.startswith("test_multinode")
+                and os.environ.get("RUN_MULTINODE_TESTS") != "1",
+                reason="Set RUN_MULTINODE_TESTS=1 to run on two nodes with 8 GPUs each.",
+            ),
+        )
+        for flow in sorted(FLOWS.glob("test_*.py"))
+    ],
+)
 def test_flow(flow, flow_env, tmp_path):
     expected = expectations(flow)
     env = flow_env.copy()
