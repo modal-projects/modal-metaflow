@@ -455,9 +455,12 @@ class ModalDecorator(StepDecorator):
         # Deploy the app for local execution
         try:
             flow_name = flow.name
-            app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
+            # run ids restart with each metadata service, so make the name unique per run
+            self.app_name = _sanitize_modal_app_name(
+                flow_name, f"{run_id}-{uuid.uuid4().hex[:8]}", step_name
+            )
             app = _get_or_create_modal_app(
-                app_name,
+                self.app_name,
                 modal_func_kwargs=modal_func_kwargs,
                 modal_environment=modal_environment,
                 clustered_size=self.attributes["clustered_size"],
@@ -488,12 +491,7 @@ class ModalDecorator(StepDecorator):
                 )
 
                 # Add Modal-specific arguments
-                flow_name = getattr(self.flow, "name", "unknown")
-                step_name = getattr(self, "step_name", "unknown")
-                run_id = getattr(self, "run_id", "unknown")
-                app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-
-                cli_args.command_options["modal-app-name"] = app_name
+                cli_args.command_options["modal-app-name"] = self.app_name
                 cli_args.command_options["modal-func-name"] = "metaflow_entry"
             else:
                 print(

@@ -53,7 +53,7 @@ pip install git+https://github.com/modal-projects/modal-metaflow
 | `role_arn` | AWS role to assume via [Modal OIDC](https://modal.com/docs/guide/oidc-integration). |
 | `clustered_size`, `clustered_rdma` | Run the step on several nodes, see below. |
 
-Each step of a run deploys a Modal app named `<flow>-<run_id>-<step>`. It is stopped, best effort, when the run finishes (or the task, on Argo).
+Each step of a run deploys a Modal app named `<flow>-<run_id>-<random>-<step>`. It is stopped, best effort, when the run finishes (or the task, on Argo).
 
 ## Multi-node steps
 
