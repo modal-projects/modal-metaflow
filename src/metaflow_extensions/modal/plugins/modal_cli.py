@@ -290,7 +290,7 @@ def step(
             modal_func_name=modal_func_name,
             modal_role_arn=modal_role_arn,
             run_time_limit=run_time_limit,
-            clustered=bool(modal_deco and modal_deco.attributes["multicluster_size"]),
+            clustered=bool(modal_deco and modal_deco.attributes["clustered_size"]),
             echo=echo,
             **kwargs,
         )

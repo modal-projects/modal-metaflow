@@ -137,6 +137,11 @@ def configure_env(mf_service, monkeypatch, metaflow_home_path):
     aws_path = metaflow_home_path / "aws_config"
     monkeypatch.setenv("AWS_CONFIG_FILE", str(aws_path))
 
+    # the in-process client read its config at import, so point it at this session's service
+    from metaflow import metadata
+
+    metadata(f"service@{mf_service.metadata_service.url}")
+
 
 @pytest.fixture()
 def in_ci():

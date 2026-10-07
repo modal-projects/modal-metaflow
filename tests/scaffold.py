@@ -25,7 +25,7 @@ DEFAULT_APP_NAME = "metaflow-test"
 DEFAULT_INCLUDE_UI = True
 
 # TODO: This should be configurable
-METAFLOW_DEFAULT_CONTAINER_IMAGE = "ghcr.io/thomasjpfan/modal-client:0.0.3"
+METAFLOW_DEFAULT_CONTAINER_IMAGE = "ghcr.io/modal-projects/modal-metaflow:latest"
 
 
 class Minio(NamedTuple):
@@ -600,6 +600,22 @@ def start_argo_kubernetes(mf_home: Path, modal_token_id: str, modal_token_secret
             "-f",
             "https://github.com/argoproj/argo-workflows/releases/download"
             f"/{ARGO_WORKFLOWS_VERSION}/quick-start-minimal.yaml",
+        ],
+        check=True,
+    )
+    # metaflow stores its own logs, so don't archive pod logs to the quick-start minio
+    run(
+        [
+            kubectl,
+            "patch",
+            "configmap",
+            "artifact-repositories",
+            "-n",
+            "argo",
+            "--type",
+            "merge",
+            "-p",
+            '{"data":{"default-v1":"archiveLogs: false\\n"}}',
         ],
         check=True,
     )

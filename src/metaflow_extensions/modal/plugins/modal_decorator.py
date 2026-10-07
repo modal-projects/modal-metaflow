@@ -66,8 +66,8 @@ def _get_or_create_modal_app(
     app_name: str,
     modal_func_kwargs: dict,
     modal_environment: Optional[str] = None,
-    multicluster_size: Optional[int] = None,
-    multicluster_rdma_enabled: Optional[bool] = None,
+    clustered_size: Optional[int] = None,
+    clustered_rdma: Optional[bool] = None,
 ) -> modal_sdk.App:
     """
     Get or create a Modal app using deterministic naming.
@@ -85,9 +85,9 @@ def _get_or_create_modal_app(
         # Create and deploy the app
         app = modal_sdk.App(name=app_name, include_source=True)
         entrypoint = metaflow_entry
-        if multicluster_size is not None:
+        if clustered_size is not None:
             entrypoint = modal_sdk.clustered(
-                size=multicluster_size, rdma=multicluster_rdma_enabled or False
+                size=clustered_size, rdma=clustered_rdma or False
             )(entrypoint)
         app.function(**modal_func_kwargs)(entrypoint)
 
@@ -139,8 +139,8 @@ class ModalDecorator(StepDecorator):
     defaults = {
         "cpu": None,
         "gpu": None,
-        "multicluster_size": None,
-        "multicluster_rdma_enabled": None,
+        "clustered_size": None,
+        "clustered_rdma": None,
         "memory": None,
         "ephemeral_disk": None,
         "image": None,
@@ -299,7 +299,7 @@ class ModalDecorator(StepDecorator):
                         k8s_attrs["shared_memory"] = None
                         k8s_attrs["image"] = (
                             os.getenv("METAFLOW_DEFAULT_IMAGE")
-                            or "ghcr.io/thomasjpfan/modal-client:0.0.3"
+                            or "ghcr.io/modal-projects/modal-metaflow:latest"
                         )
 
                         # Per-step Modal secret injection
@@ -460,8 +460,8 @@ class ModalDecorator(StepDecorator):
                 app_name,
                 modal_func_kwargs=modal_func_kwargs,
                 modal_environment=modal_environment,
-                multicluster_size=self.attributes["multicluster_size"],
-                multicluster_rdma_enabled=self.attributes["multicluster_rdma_enabled"],
+                clustered_size=self.attributes["clustered_size"],
+                clustered_rdma=self.attributes["clustered_rdma"],
             )
             # Save app ID for cleanup
             self.deployed_app_id = getattr(app, "app_id", None)
@@ -469,12 +469,6 @@ class ModalDecorator(StepDecorator):
             raise ModalDecoratorException(
                 f"Failed to deploy Modal app in runtime_init: {e}"
             )
-
-    def runtime_task_created(
-        self, task_datastore, task_id, split_index, input_paths, is_cloned, ubf_context
-    ):
-        """No-op - deployment moved to task_decorate for Argo compatibility."""
-        pass
 
     def runtime_step_cli(
         self, cli_args, retry_count, max_user_code_retries, ubf_context
@@ -720,9 +714,9 @@ class ModalDecorator(StepDecorator):
                     app_name,
                     modal_func_kwargs=modal_func_kwargs,
                     modal_environment=modal_environment,
-                    multicluster_size=self.attributes["multicluster_size"],
-                    multicluster_rdma_enabled=self.attributes[
-                        "multicluster_rdma_enabled"
+                    clustered_size=self.attributes["clustered_size"],
+                    clustered_rdma=self.attributes[
+                        "clustered_rdma"
                     ],
                 )
 
@@ -759,6 +753,12 @@ class ModalDecorator(StepDecorator):
                             return sys.argv[idx + 1]
                     except (ValueError, IndexError):
                         pass
+
+                    # metaflow >= 2.19 passes them in a file instead
+                    if "--input-paths-filename" in sys.argv:
+                        path = sys.argv[sys.argv.index("--input-paths-filename") + 1]
+                        with open(path, encoding="utf-8") as f:
+                            return f.read().strip(" \n\"'")
 
                     return ""
 
@@ -836,24 +836,12 @@ class ModalDecorator(StepDecorator):
                     )
 
                 # Return None to skip local execution
-                return None
+                return
 
             except Exception as e:
                 raise ModalDecoratorException(f"Modal Argo execution failed: {e}")
 
         return wrapper
-
-    def task_post_step(
-        self, step_name, flow, graph, retry_count, max_user_code_retries
-    ):
-        """Task post-step hook."""
-        pass
-
-    def task_exception(
-        self, exception, step_name, flow, graph, retry_count, max_user_code_retries
-    ):
-        """Task exception hook."""
-        return
 
     def task_finished(
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries

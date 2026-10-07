@@ -39,21 +39,13 @@ pytest tests --no-argo
 
 Multinode tests need two 8-GPU nodes and are skipped unless `RUN_MULTINODE_TESTS=1` is set.
 
-## Troubleshooting Argo
+## Argo image
 
-If the default launcher image fails with `no match for platform in manifest`, build a local one:
-
-```bash
-docker build -f Dockerfile.dev -t modal-metaflow-dev:local .
-k3d image import modal-metaflow-dev:local -c metaflow-argo
-export METAFLOW_DEFAULT_CONTAINER_IMAGE=modal-metaflow-dev:local  # regular steps
-export METAFLOW_DEFAULT_IMAGE=modal-metaflow-dev:local            # modal launcher steps
-```
-
-If Argo's example MinIO fails to pull, disable its log archival and scale it down. Metaflow keeps its own logs in the Modal MinIO sandbox.
+Argo pods run `ghcr.io/modal-projects/modal-metaflow:latest`, built from `Dockerfile` and published by `.github/workflows/image.yml` whenever `Dockerfile` changes on `main`. To try a local build:
 
 ```bash
-kubectl -n argo patch configmap artifact-repositories --type merge \
-  -p '{"data":{"default-v1":"archiveLogs: false\n"}}'
-kubectl -n argo scale deployment/minio --replicas=0
+docker build -t modal-metaflow:local .
+k3d image import modal-metaflow:local -c metaflow-argo
+export METAFLOW_DEFAULT_CONTAINER_IMAGE=modal-metaflow:local  # regular steps
+export METAFLOW_DEFAULT_IMAGE=modal-metaflow:local            # modal launcher steps
 ```
