@@ -444,7 +444,7 @@ def _execute_modal_task(
 
         # Wait for function completion using natural timeout
         try:
-            result, stdout_result, stderr_result = call.get(timeout=run_time_limit)
+            result, stdout_result, stderr_result = call.get()
             if echo:
                 echo(stdout_result, stream="stdout")
                 echo(stderr_result, stream="stderr")
@@ -452,10 +452,9 @@ def _execute_modal_task(
             return result
         except subprocess.CalledProcessError as e:
             return e.returncode
-        except TimeoutError:
+        except modal_sdk.exception.FunctionTimeoutError as e:
             if echo:
-                echo("Modal function timed out")
-            call.cancel()
+                echo(f"Modal function timed out: {e}")
             return 1
         except KeyboardInterrupt:
             if echo:

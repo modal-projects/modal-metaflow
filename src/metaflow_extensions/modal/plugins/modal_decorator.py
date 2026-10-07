@@ -189,13 +189,8 @@ class ModalDecorator(StepDecorator):
         if modal_timeout_specified:
             timeout_val = self.attributes["timeout"]
         elif timeout_decorator_present:
-            # Find the timeout decorator and get its value
-            for deco in decorators:
-                if hasattr(deco, "name") and deco.name == "timeout":
-                    timeout_val = deco.secs
-                    break
-            raise ModalDecoratorException(
-                "Internal error: timeout decorator was detected but not found"
+            timeout_val = next(
+                deco.secs for deco in decorators if deco.name == "timeout"
             )
         else:
             timeout_val = default_timeout
