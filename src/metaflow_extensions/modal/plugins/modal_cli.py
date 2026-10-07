@@ -4,6 +4,7 @@ The `metaflow modal step` subcommand is used to launch individual step method ex
 It's meant to be invoked by `ModalDecorator.runtime_step_cli`.
 """
 
+import contextlib
 import json
 import os
 import shlex
@@ -32,8 +33,10 @@ from metaflow.metaflow_config import (
 )
 from metaflow.mflog import (
     BASH_SAVE_LOGS,
+    TASK_LOG_SOURCE,
     bash_capture_logs,
     export_mflog_env_vars,
+    get_log_tailer,
 )
 
 LOGS_DIR = "$PWD/.logs"
@@ -78,11 +81,6 @@ def modal():
 @click.option(
     "--max-user-code-retries", default=0, help="Passed to the top-level 'step'."
 )
-@click.option(
-    "--run-time-limit",
-    default=5 * 24 * 60 * 60,
-    help="Run time limit in seconds for the Modal function. Default is 5 days.",
-)
 @click.option("--modal-app-name", help="Modal app name for function lookup.")
 @click.option("--modal-func-name", help="Modal function name for execution.")
 @click.option("--environment", multiple=True, help="Environment variables for Modal.")
@@ -95,7 +93,6 @@ def step(
     code_package_sha,
     code_package_url,
     executable=None,
-    run_time_limit=None,
     modal_app_name=None,
     modal_func_name=None,
     environment=None,
@@ -145,8 +142,11 @@ def step(
         }
         kwargs["input_paths"] = "".join("${%s}" % s for s in split_vars.keys())
 
+    # read from the environment so multinode followers can use their own task id.
+    step_kwargs = dict(kwargs, task_id="${METAFLOW_MODAL_TASK_ID}")
+
     # Construct step arguments
-    step_args = " ".join(util.dict_to_cli_options(kwargs))
+    step_args = " ".join(util.dict_to_cli_options(step_kwargs))
     step_cli = "{entrypoint} {top_args} step {step} {step_args}".format(
         entrypoint=entrypoint,
         top_args=top_args,
@@ -175,6 +175,12 @@ def step(
         )
     }
 
+    for deco in node.decorators:
+        if deco.name == "environment":
+            env.update(
+                {key: str(value) for key, value in deco.attributes["vars"].items()}
+            )
+
     # Add split variables for input paths
     if split_vars:
         env.update(split_vars)
@@ -202,6 +208,7 @@ def step(
         "METAFLOW_DEFAULT_AWS_CLIENT_PROVIDER": DEFAULT_AWS_CLIENT_PROVIDER,
         "METAFLOW_AWS_SECRETS_MANAGER_DEFAULT_REGION": AWS_SECRETS_MANAGER_DEFAULT_REGION,
         "METAFLOW_S3_ENDPOINT_URL": S3_ENDPOINT_URL,
+        "AWS_ENDPOINT_URL_S3": S3_ENDPOINT_URL,
         "METAFLOW_OTEL_ENDPOINT": OTEL_ENDPOINT,
         # Pass production token and user info to ensure namespace consistency between Argo pod and Modal worker
         "METAFLOW_PRODUCTION_TOKEN": os.environ.get("METAFLOW_PRODUCTION_TOKEN"),
@@ -224,6 +231,7 @@ def step(
     env_vars_to_add = {k: v for k, v in env_vars_to_add.items() if v is not None}
 
     env.update(env_vars_to_add)
+    env["METAFLOW_MODAL_TASK_ID"] = str(kwargs["task_id"])
 
     # Set up log locations for streaming
     ds = ctx.obj.flow_datastore.get_task_datastore(
@@ -257,7 +265,7 @@ def step(
         ctx,
         kwargs["run_id"],
         step_name,
-        kwargs["task_id"],
+        "${METAFLOW_MODAL_TASK_ID}",
         retry_count,
         code_package_metadata,
         code_package_url,
@@ -267,18 +275,24 @@ def step(
 
     try:
         # Execute the Modal task
+        # @modal may be absent here when it was attached with --with on argo
+        modal_deco = next((d for d in node.decorators if d.name == "modal"), None)
         exit_code = _execute_modal_task(
             step_cli=shlex.join(step_cli),
             env=env,
             modal_app_name=modal_app_name,
             modal_func_name=modal_func_name,
             modal_role_arn=modal_role_arn,
-            run_time_limit=run_time_limit,
+            clustered=bool(modal_deco and modal_deco.attributes["clustered_size"]),
             echo=echo,
             **kwargs,
         )
 
         if exit_code != 0:
+            for stream in ("stdout", "stderr"):
+                location = ds.get_log_location(TASK_LOG_SOURCE, stream)
+                for line in get_log_tailer(location, ds.TYPE):
+                    echo(line, stream=stream)
             _sync_metadata()
             sys.exit(exit_code)
 
@@ -365,7 +379,7 @@ def _execute_modal_task(
     modal_app_name: Optional[str] = None,
     modal_func_name: Optional[str] = None,
     modal_role_arn: Optional[str] = None,
-    run_time_limit: Optional[int] = None,
+    clustered: bool = False,
     echo=None,
     **kwargs,
 ) -> int:
@@ -431,16 +445,17 @@ def _execute_modal_task(
 
         # Wait for function completion using natural timeout
         try:
-            result, stdout_result, stderr_result = call.get(timeout=run_time_limit)
+            result, stdout_result, stderr_result = call.get()
             if echo:
                 echo(stdout_result, stream="stdout")
                 echo(stderr_result, stream="stderr")
                 echo(f"Modal function completed with exit code {result}")
             return result
-        except TimeoutError:
+        except subprocess.CalledProcessError as e:
+            return e.returncode
+        except modal_sdk.exception.FunctionTimeoutError as e:
             if echo:
-                echo("Modal function timed out")
-            call.cancel()
+                echo(f"Modal function timed out: {e}")
             return 1
         except KeyboardInterrupt:
             if echo:
@@ -451,6 +466,11 @@ def _execute_modal_task(
             if echo:
                 echo(f"Modal function failed: {e}")
             return 1
+        finally:
+            # multinode followers keep running after rank 0 returns or fails
+            if clustered:
+                with contextlib.suppress(Exception):
+                    call.cancel(terminate_containers=True)
 
     except Exception as e:
         if echo:

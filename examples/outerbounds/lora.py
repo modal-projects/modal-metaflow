@@ -1,3 +1,4 @@
+import os
 import pathlib
 
 import modal as modal_sdk
@@ -18,9 +19,7 @@ from metaflow import (
 )
 from mixins import N_GPU, HuggingFaceLora
 
-metadata(
-    "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
-)
+metadata(f"service@{os.environ['METAFLOW_SERVICE_URL']}")
 
 req_path = pathlib.Path(__file__).parent / "requirements.txt"
 # req_path = "requirements.txt"

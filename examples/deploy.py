@@ -1,3 +1,4 @@
+import os
 import pathlib
 import time
 from datetime import datetime, timedelta
@@ -12,11 +13,11 @@ deployed_flow = (
         datastore_root="s3://metaflow-modal",
         env={
             "METAFLOW_DEFAULT_METADATA": "service",
-            "METAFLOW_SERVICE_URL": "https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run",
+            "METAFLOW_SERVICE_URL": os.environ["METAFLOW_SERVICE_URL"],
             "METAFLOW_KUBERNETES_NAMESPACE": "argo",
             "METAFLOW_ARGO_WORKFLOWS_KUBERNETES_SECRETS": "s3-credentials,modal-argo-creds",
             "METAFLOW_DATASTORE_SYSROOT_S3": "s3://metaflow-modal",
-            "METAFLOW_DEFAULT_CONTAINER_IMAGE": "ghcr.io/thomasjpfan/modal-client:0.0.3",
+            "METAFLOW_DEFAULT_CONTAINER_IMAGE": "ghcr.io/modal-projects/modal-metaflow:latest",
         },
     )
     .argo_workflows()

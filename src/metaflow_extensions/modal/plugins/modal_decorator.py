@@ -26,6 +26,7 @@ from metaflow.metaflow_config import (
     FEAT_ALWAYS_UPLOAD_CODE_PACKAGE,
 )
 from metaflow.packaging_sys import ContentType
+from metaflow.sidecar import Sidecar
 from metaflow.util import get_username, resolve_identity
 
 
@@ -65,6 +66,8 @@ def _get_or_create_modal_app(
     app_name: str,
     modal_func_kwargs: dict,
     modal_environment: Optional[str] = None,
+    clustered_size: Optional[int] = None,
+    clustered_rdma: Optional[bool] = None,
 ) -> modal_sdk.App:
     """
     Get or create a Modal app using deterministic naming.
@@ -81,7 +84,12 @@ def _get_or_create_modal_app(
         # App doesn't exist, deploy it
         # Create and deploy the app
         app = modal_sdk.App(name=app_name, include_source=True)
-        app.function(**modal_func_kwargs)(metaflow_entry)
+        entrypoint = metaflow_entry
+        if clustered_size is not None:
+            entrypoint = modal_sdk.clustered(
+                size=clustered_size, rdma=clustered_rdma or False
+            )(entrypoint)
+        app.function(**modal_func_kwargs)(entrypoint)
 
         # Deploy the app
         if modal_environment:
@@ -131,6 +139,8 @@ class ModalDecorator(StepDecorator):
     defaults = {
         "cpu": None,
         "gpu": None,
+        "clustered_size": None,
+        "clustered_rdma": None,
         "memory": None,
         "ephemeral_disk": None,
         "image": None,
@@ -178,8 +188,7 @@ class ModalDecorator(StepDecorator):
 
         if modal_timeout_specified and timeout_decorator_present:
             raise ModalDecoratorException(
-                "Cannot specify both @modal(timeout=...) and @timeout decorator. "
-                "Please use only one timeout configuration method."
+                "Choose @timeout or @modal(timeout=...), not both."
             )
 
         # Fallback to globally configured timeout
@@ -189,13 +198,8 @@ class ModalDecorator(StepDecorator):
         if modal_timeout_specified:
             timeout_val = self.attributes["timeout"]
         elif timeout_decorator_present:
-            # Find the timeout decorator and get its value
-            for deco in decorators:
-                if hasattr(deco, "name") and deco.name == "timeout":
-                    timeout_val = deco.secs
-                    break
-            raise ModalDecoratorException(
-                "Internal error: timeout decorator was detected but not found"
+            timeout_val = next(
+                deco.secs for deco in decorators if deco.name == "timeout"
             )
         else:
             timeout_val = default_timeout
@@ -243,6 +247,14 @@ class ModalDecorator(StepDecorator):
                 "The *@modal* decorator requires --datastore=s3 at the moment."
             )
 
+        if (
+            self.attributes["clustered_rdma"]
+            and self.attributes["clustered_size"] is None
+        ):
+            raise ModalDecoratorException(
+                "clustered_rdma=True requires clustered_size."
+            )
+
         # Store basic context
         self.environment = environment
         self.flow_datastore = flow_datastore
@@ -260,6 +272,11 @@ class ModalDecorator(StepDecorator):
         in_argo = False
         for deco in decorators:
             if hasattr(deco, "name"):
+                if deco.name == "parallel":
+                    raise ModalDecoratorException(
+                        "@parallel is unsupported with @modal. "
+                        "Use @modal(clustered_size=...) for multi-node execution."
+                    )
                 if deco.name == "kubernetes":
                     # If the user explicitly authored @kubernetes on this step, keep prior behavior.
                     is_user_k8s = getattr(deco, "statically_defined", False)
@@ -282,7 +299,7 @@ class ModalDecorator(StepDecorator):
                         k8s_attrs["shared_memory"] = None
                         k8s_attrs["image"] = (
                             os.getenv("METAFLOW_DEFAULT_IMAGE")
-                            or "ghcr.io/thomasjpfan/modal-client:0.0.3"
+                            or "ghcr.io/modal-projects/modal-metaflow:latest"
                         )
 
                         # Per-step Modal secret injection
@@ -317,8 +334,7 @@ class ModalDecorator(StepDecorator):
 
                 # Collect information from other decorators
                 elif deco.name == "environment":
-                    if hasattr(deco, "vars") and len(deco.vars) > 0:
-                        self.env_vars = deco.vars
+                    self.env_vars = deco.attributes["vars"]
 
                 elif deco.name == "pypi":
                     if hasattr(deco, "packages") and len(deco.packages) > 0:
@@ -439,11 +455,16 @@ class ModalDecorator(StepDecorator):
         # Deploy the app for local execution
         try:
             flow_name = flow.name
-            app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
+            # run ids restart with each metadata service, so make the name unique per run
+            self.app_name = _sanitize_modal_app_name(
+                flow_name, f"{run_id}-{uuid.uuid4().hex[:8]}", step_name
+            )
             app = _get_or_create_modal_app(
-                app_name,
+                self.app_name,
                 modal_func_kwargs=modal_func_kwargs,
                 modal_environment=modal_environment,
+                clustered_size=self.attributes["clustered_size"],
+                clustered_rdma=self.attributes["clustered_rdma"],
             )
             # Save app ID for cleanup
             self.deployed_app_id = getattr(app, "app_id", None)
@@ -451,12 +472,6 @@ class ModalDecorator(StepDecorator):
             raise ModalDecoratorException(
                 f"Failed to deploy Modal app in runtime_init: {e}"
             )
-
-    def runtime_task_created(
-        self, task_datastore, task_id, split_index, input_paths, is_cloned, ubf_context
-    ):
-        """No-op - deployment moved to task_decorate for Argo compatibility."""
-        pass
 
     def runtime_step_cli(
         self, cli_args, retry_count, max_user_code_retries, ubf_context
@@ -476,16 +491,8 @@ class ModalDecorator(StepDecorator):
                 )
 
                 # Add Modal-specific arguments
-                flow_name = getattr(self.flow, "name", "unknown")
-                step_name = getattr(self, "step_name", "unknown")
-                run_id = getattr(self, "run_id", "unknown")
-                app_name = _sanitize_modal_app_name(flow_name, run_id, step_name)
-
-                cli_args.command_options["modal-app-name"] = app_name
+                cli_args.command_options["modal-app-name"] = self.app_name
                 cli_args.command_options["modal-func-name"] = "metaflow_entry"
-                cli_args.command_options["run-time-limit"] = self.attributes.get(
-                    "timeout", DEFAULT_RUNTIME_LIMIT
-                )
             else:
                 print(
                     "[Modal] No package info - CLI rewrite skipped, will use task_decorate"
@@ -495,7 +502,9 @@ class ModalDecorator(StepDecorator):
         """Clean up deployed Modal app for local execution."""
         if hasattr(self, "deployed_app_id") and self.deployed_app_id:
             try:
-                stop_cmd = ["modal", "app", "stop", str(self.deployed_app_id)]
+                stop_cmd = [
+                    "modal", "app", "stop", "--yes", str(self.deployed_app_id)
+                ]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
             except Exception:
                 # App cleanup failures are non-fatal
@@ -534,12 +543,18 @@ class ModalDecorator(StepDecorator):
         print(f"[Modal Debug] USER env: {os.environ.get('USER')}")
         print(f"[Modal Debug] USERNAME env: {os.environ.get('USERNAME')}")
         print(f"[Modal Debug] METAFLOW_USER env: {os.environ.get('METAFLOW_USER')}")
-        print(
-            f"[Modal Debug] METAFLOW_PRODUCTION_TOKEN env: {os.environ.get('METAFLOW_PRODUCTION_TOKEN')}"
-        )
 
-        # Skip if we're inside a Modal worker
         if in_modal_worker():
+            from metaflow import current
+            from .cluster import ModalCluster
+
+            cluster = ModalCluster.from_env()
+            if cluster is not None:
+                current._update_env({"modal_cluster": cluster})
+                if cluster.node_rank:  # only rank 0 saves artifacts
+                    task_datastore._persist = False
+            self._save_logs_sidecar = Sidecar("save_logs_periodically")
+            self._save_logs_sidecar.start()
             return
 
         # Persist references for use in task_decorate
@@ -598,9 +613,11 @@ class ModalDecorator(StepDecorator):
         # If we're inside a Modal worker, execute user code directly
 
         if in_modal_worker():
-            print("[Modal Worker Debug]: in task_decorate")
-            print(f"[Modal Worker Debug]: image {self.attributes.get('image')}")
-            print(f"[Modal Worker Debug]: all attributes {self.attributes}")
+            from .cluster import ModalCluster
+
+            cluster = ModalCluster.from_env()
+            if cluster is not None and cluster.node_rank == 0:
+                return cluster.wait_for_followers(step_func)
             return step_func
 
         # Check if this is local execution where runtime_step_cli should have handled this
@@ -689,6 +706,10 @@ class ModalDecorator(StepDecorator):
                     app_name,
                     modal_func_kwargs=modal_func_kwargs,
                     modal_environment=modal_environment,
+                    clustered_size=self.attributes["clustered_size"],
+                    clustered_rdma=self.attributes[
+                        "clustered_rdma"
+                    ],
                 )
 
                 # Store app info for cleanup in task_finished
@@ -701,7 +722,7 @@ class ModalDecorator(StepDecorator):
                 # Build modal CLI command (same pattern as runtime_step_cli)
                 script_name = os.environ.get("METAFLOW_FLOW_FILENAME", "basic.py")
 
-                # Extract input paths from sys.argv (Oracle's fix)
+                # Extract input paths from sys.argv
                 def _extract_input_paths():
                     """Extract input paths from sys.argv, handling both CLI args and env vars."""
                     # First try environment variable
@@ -724,6 +745,12 @@ class ModalDecorator(StepDecorator):
                             return sys.argv[idx + 1]
                     except (ValueError, IndexError):
                         pass
+
+                    # metaflow >= 2.19 passes them in a file instead
+                    if "--input-paths-filename" in sys.argv:
+                        path = sys.argv[sys.argv.index("--input-paths-filename") + 1]
+                        with open(path, encoding="utf-8") as f:
+                            return f.read().strip(" \n\"'")
 
                     return ""
 
@@ -801,39 +828,33 @@ class ModalDecorator(StepDecorator):
                     )
 
                 # Return None to skip local execution
-                return None
+                return
 
             except Exception as e:
                 raise ModalDecoratorException(f"Modal Argo execution failed: {e}")
 
         return wrapper
 
-    def task_post_step(
-        self, step_name, flow, graph, retry_count, max_user_code_retries
-    ):
-        """Task post-step hook."""
-        pass
-
-    def task_exception(
-        self, exception, step_name, flow, graph, retry_count, max_user_code_retries
-    ):
-        """Task exception hook."""
-        return
-
     def task_finished(
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
     ):
         """Task finished hook."""
+        if in_modal_worker():
+            sidecar = getattr(self, "_save_logs_sidecar", None)
+            if sidecar is not None:
+                sidecar.terminate()
+            return
+
         if hasattr(self, "metadata") and self.metadata.TYPE == "local":
-            # Note that the datastore is *always* Amazon S3 (see
-            # runtime_task_created function).
             print("[Modal] Syncing local metadata to datastore")
             sync_local_metadata_to_datastore(DATASTORE_LOCAL_DIR, self.task_datastore)
 
         # Clean up Modal app deployed in Argo execution
         if hasattr(self, "argo_deployed_app_id") and self.argo_deployed_app_id:
             try:
-                stop_cmd = ["modal", "app", "stop", str(self.argo_deployed_app_id)]
+                stop_cmd = [
+                    "modal", "app", "stop", "--yes", str(self.argo_deployed_app_id)
+                ]
                 subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
             except Exception:
                 # App cleanup failures are non-fatal

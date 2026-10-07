@@ -7,10 +7,7 @@ import modal
 
 app = modal.App("metaflow-metadata-service")
 
-MF_METADATA_DB_HOST = os.environ.get(
-    "MF_METADATA_DB_HOST",
-    "modal-labs-jason-dev--metaflow-metadata-service-meta-48c995-dev.modal.run",
-)
+MF_METADATA_DB_HOST = os.environ["MF_METADATA_DB_HOST"]
 metadata_image = (
     modal.Image.from_registry("netflixoss/metaflow_metadata_service")
     .pip_install("uv")

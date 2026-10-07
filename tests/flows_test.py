@@ -22,7 +22,7 @@ def test_hello_world_runner(flows_path, in_ci):
         return
 
     assert run.successful
-    assert run.data.custom_value == 9
+    assert run.data.custom_value == 27
 
 
 @pytest.mark.timeout(600)
@@ -36,7 +36,7 @@ def test_argo_hello_world_workflow_trigger(flows_path):
     run = triggered_run.wait_for_run(timeout=600)
 
     assert run.successful
-    assert run.data.custom_value == 10
+    assert run.data.custom_value == 30
 
 
 @pytest.mark.timeout(600)

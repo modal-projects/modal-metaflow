@@ -7,5 +7,5 @@ modal deploy examples/metadata_service.py
 
 This will print out a Modal endpoint for the metadata service, you can configure the metadata service URL inline in the `lora.py` script or with an environment variable override:
 ```bash
-METAFLOW_DEFAULT_METADATA=service METAFLOW_SERVICE_URL=https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run METAFLOW_DATASTORE_SYSROOT_S3=s3://metaflow-modal python lora.py --datastore s3 run --config-file experiment_config.yml
+METAFLOW_DEFAULT_METADATA=service METAFLOW_SERVICE_URL=<metadata-service-url> METAFLOW_DATASTORE_SYSROOT_S3=s3://metaflow-modal python lora.py --datastore s3 run --config-file experiment_config.yml
 ```

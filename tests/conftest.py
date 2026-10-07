@@ -1,12 +1,14 @@
 import os
-import pytest
 from pathlib import Path
+
+import pytest
+
 from tests.scaffold import (
+    DEFAULT_TIMEOUT,
     create_metaflow_modal_resources,
+    start_argo_kubernetes,
     stop_argo_kubernetes,
     write_config,
-    start_argo_kubernetes,
-    DEFAULT_TIMEOUT,
 )
 
 
@@ -135,8 +137,16 @@ def configure_env(mf_service, monkeypatch, metaflow_home_path):
     aws_path = metaflow_home_path / "aws_config"
     monkeypatch.setenv("AWS_CONFIG_FILE", str(aws_path))
 
+    # the in-process client read its config at import, so point it at this session's service
+    from metaflow import metadata
+
+    metadata(f"service@{mf_service.metadata_service.url}")
+
 
 @pytest.fixture()
 def in_ci():
     # Accessing run is not working on github actions.
     return "GITHUB_RUN_ID" in os.environ
+
+
+collect_ignore_glob = ["flows/integration/test_*.py"]
