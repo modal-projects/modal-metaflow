@@ -548,9 +548,6 @@ class ModalDecorator(StepDecorator):
         print(f"[Modal Debug] USER env: {os.environ.get('USER')}")
         print(f"[Modal Debug] USERNAME env: {os.environ.get('USERNAME')}")
         print(f"[Modal Debug] METAFLOW_USER env: {os.environ.get('METAFLOW_USER')}")
-        print(
-            f"[Modal Debug] METAFLOW_PRODUCTION_TOKEN env: {os.environ.get('METAFLOW_PRODUCTION_TOKEN')}"
-        )
 
         if in_modal_worker():
             from metaflow import current
@@ -730,7 +727,7 @@ class ModalDecorator(StepDecorator):
                 # Build modal CLI command (same pattern as runtime_step_cli)
                 script_name = os.environ.get("METAFLOW_FLOW_FILENAME", "basic.py")
 
-                # Extract input paths from sys.argv (Oracle's fix)
+                # Extract input paths from sys.argv
                 def _extract_input_paths():
                     """Extract input paths from sys.argv, handling both CLI args and env vars."""
                     # First try environment variable
