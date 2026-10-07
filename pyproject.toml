@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Metaflow plugin for running Flow steps on Modal"
 readme = "README.md"
 authors = [{ name = "Modal Labs" }]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = ["modal>=1.6.0", "metaflow>=2.16.8"]
 
