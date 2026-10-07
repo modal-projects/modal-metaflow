@@ -3,9 +3,7 @@ import modal as modal_sdk
 
 from metaflow import FlowSpec, step, modal, metadata, kubernetes, project
 
-metadata(
-    "service@https://modal-labs-jason-dev--metaflow-metadata-service-metaflow-2fbf76.modal.run"
-)
+metadata(f"service@{os.environ['METAFLOW_SERVICE_URL']}")
 
 
 image = modal_sdk.Image.debian_slim(python_version="3.11")

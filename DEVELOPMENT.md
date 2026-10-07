@@ -30,6 +30,8 @@ Tear everything down with `inv teardown`, or `inv stop-metaflow` if you skipped 
 
 ## Test
 
+The tests start their own services, but the Metaflow client needs the profile that `inv start-metaflow` writes:
+
 ```bash
 source .modal_metaflow/activate
 pytest tests --no-argo
