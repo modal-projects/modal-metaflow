@@ -248,11 +248,11 @@ class ModalDecorator(StepDecorator):
             )
 
         if (
-            self.attributes["multicluster_rdma_enabled"]
-            and self.attributes["multicluster_size"] is None
+            self.attributes["clustered_rdma"]
+            and self.attributes["clustered_size"] is None
         ):
             raise ModalDecoratorException(
-                "multicluster_rdma_enabled=True requires multicluster_size."
+                "clustered_rdma=True requires clustered_size."
             )
 
         # Store basic context
@@ -275,7 +275,7 @@ class ModalDecorator(StepDecorator):
                 if deco.name == "parallel":
                     raise ModalDecoratorException(
                         "@parallel is unsupported with @modal. "
-                        "Use @modal(multicluster_size=...) for multi-node execution."
+                        "Use @modal(clustered_size=...) for multi-node execution."
                     )
                 if deco.name == "kubernetes":
                     # If the user explicitly authored @kubernetes on this step, keep prior behavior.

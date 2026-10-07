@@ -23,7 +23,7 @@ class TestFlow(FlowSpec):
     @modal(
         image=IMAGE,
         gpu=["H100:8", "H200:8", "B200:8", "B300:8"],
-        multicluster_size=2,
+        clustered_size=2,
         timeout=180,
     )
     @environment(vars=aws_env())

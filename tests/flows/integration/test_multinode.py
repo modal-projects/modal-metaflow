@@ -14,8 +14,8 @@ class TestFlow(FlowSpec):
     @modal(
         image=modal_sdk.Image.from_registry("python:3.11-slim"),
         gpu=["H100:8", "H200:8", "B200:8", "B300:8"],
-        multicluster_size=2,
-        multicluster_rdma_enabled=True,
+        clustered_size=2,
+        clustered_rdma=True,
         timeout=120,
     )
     @environment(vars=aws_env())
